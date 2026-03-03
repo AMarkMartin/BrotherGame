@@ -1,0 +1,84 @@
+# ============================================================
+# BrotherGame .gitignore
+# ============================================================
+
+# ----- Godot (if using) -------------------------------------
+.import/
+export.cfg
+export_presets.cfg
+*.tmp.godot/
+*.uid
+
+# ----- Unity (if using) -------------------------------------
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+Assets/AssetStoreTools*
+
+# ----- Python / Pygame --------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# ----- Large binary / generated assets ----------------------
+*.psd
+*.ai
+*.sketch
+*.xcf
+# Uncomment to ignore raw audio project files:
+# *.flp
+# *.als
+# *.ptx
+
+# ----- OS ---------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ----- IDE / editors ----------------------------------------
+.vscode/settings.json
+.idea/
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# ----- Secrets / environment --------------------------------
+.env
+.env.*
+secrets.json
+credentials.json
+
+# ----- Build outputs ----------------------------------------
+/dist/
+/out/
+*.log
+
+# ----- AI agent working files -------------------------------
+.agent_context/
+*.agent.tmp

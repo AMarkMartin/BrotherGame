@@ -1,0 +1,39 @@
+name: Validate PR
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  check-pr-template:
+    name: PR Template Filled
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR body is not empty
+        if: github.event.pull_request.body == ''
+        run: |
+          echo "PR description is empty. Please fill out the PR template."
+          exit 1
+
+  check-branch-name:
+    name: Branch Naming Convention
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          if [[ ! "$BRANCH" =~ ^(arch|levels|art|audio|chore|docs|hotfix)/ ]]; then
+            echo "Branch '$BRANCH' does not follow naming convention."
+            echo "Expected: arch/, levels/, art/, audio/, chore/, docs/, or hotfix/"
+            exit 1
+          fi
+          echo "Branch name '$BRANCH' is valid."
+
+  # Add engine-specific steps below once engine is chosen:
+  # build:
+  #   name: Build Check
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Build
+  #       run: ...
