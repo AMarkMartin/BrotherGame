@@ -1,17 +1,13 @@
 /**
  * src/main.ts
  * ============================================================
- * Phaser Game entry point — Phase 0 bootstrap.
+ * Phaser Game entry point — Minimal playable version.
  *
  * This file:
- *   1. Instantiates all stub implementations of every system/service.
- *   2. Wires them into a BootScene that passes them to the first real scene.
- *   3. Registers all scene stubs so Phaser knows about them.
- *
- * Phase 0 exit criterion: `npm run dev` opens a browser window without errors.
- *
- * When a system is implemented, swap its Stub import for the real class here.
- * No scene file should need to change — they all code against the interface.
+ *   1. Instantiates all system implementations (real where available, stubs otherwise).
+ *   2. Seeds initial game state via initializeGameState().
+ *   3. Wires them into a BootScene that passes them to the first real scene.
+ *   4. Registers all scenes so Phaser knows about them.
  *
  * Owner: Architecture (@arch)
  * ============================================================
@@ -19,18 +15,23 @@
 
 import Phaser from 'phaser';
 
-// ── Stub imports ──────────────────────────────────────────────
+// ── Real system implementations ───────────────────────────────
 import { GameStateManagerStub }    from '@systems/IGameStateManager';
-import { ResourceSystemStub }      from '@systems/IResourceSystem';
-import { HeroSystemStub }          from '@systems/IHeroSystem';
-import { SiteEvolutionSystemStub } from '@systems/ISiteEvolutionSystem';
-import { TradewindSystemStub }     from '@systems/ITradewindSystem';
-import { ReachSystemStub }         from '@systems/IReachSystem';
+import { ResourceSystem }         from '@systems/ResourceSystem';
+import { HeroSystem }             from '@systems/HeroSystem';
+import { SiteEvolutionSystem }    from '@systems/SiteEvolutionSystem';
+import { TradewindSystem }        from '@systems/TradewindSystem';
+import { ReachSystem }            from '@systems/ReachSystem';
+
+// ── Stubs for systems not yet implemented ─────────────────────
 import { TechTreeSystemStub }      from '@systems/ITechTreeSystem';
 import { AudioServiceStub }        from '@services/IAudioService';
 import { SaveServiceStub }         from '@services/ISaveService';
 
-// ── Scene stubs ───────────────────────────────────────────────
+// ── Game state seed ───────────────────────────────────────────
+import { initializeGameState }     from '@data/InitialGameState';
+
+// ── Scene imports ─────────────────────────────────────────────
 import { WorldMapScene }  from '@scenes/WorldMapScene';
 import { HexZoomScene }   from '@scenes/HexZoomScene';
 import { MissionScene }   from '@scenes/MissionScene';
@@ -65,8 +66,7 @@ export interface ServiceBundle {
 
 // ─────────────────────────────────────────────────────────────
 // BootScene
-// Instantiates all stubs, then starts WorldMapScene.
-// Never renders anything — just orchestrates startup.
+// Instantiates all systems, seeds game state, starts WorldMapScene.
 // ─────────────────────────────────────────────────────────────
 class BootScene extends Phaser.Scene {
   constructor() {
@@ -76,13 +76,16 @@ class BootScene extends Phaser.Scene {
   create(): void {
     const gsm = new GameStateManagerStub();
 
+    // Seed initial game state (hex map, heroes, resources, city)
+    initializeGameState(gsm);
+
     const services: ServiceBundle = {
       gsm,
-      resourceSystem:  new ResourceSystemStub(gsm),
-      heroSystem:      new HeroSystemStub(gsm),
-      siteEvolution:   new SiteEvolutionSystemStub(gsm),
-      tradewindSystem: new TradewindSystemStub(gsm),
-      reachSystem:     new ReachSystemStub(gsm),
+      resourceSystem:  new ResourceSystem(gsm),
+      heroSystem:      new HeroSystem(gsm),
+      siteEvolution:   new SiteEvolutionSystem(gsm),
+      tradewindSystem: new TradewindSystem(gsm),
+      reachSystem:     new ReachSystem(gsm),
       techTreeSystem:  new TechTreeSystemStub(gsm),
       audioService:    new AudioServiceStub(),
       saveService:     new SaveServiceStub(),
@@ -101,8 +104,8 @@ class BootScene extends Phaser.Scene {
 // ─────────────────────────────────────────────────────────────
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,           // WebGL with Canvas fallback
-  width: 1280,
-  height: 720,
+  width: 1920,
+  height: 1080,
   backgroundColor: '#1a1a2e',
   parent: 'game-container',
   scene: [
