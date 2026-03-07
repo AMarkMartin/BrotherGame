@@ -593,6 +593,7 @@ export class MissionScene extends Phaser.Scene {
   private _completeMission(outcome: 'success' | 'retreat' | 'failure'): void {
     this.missionComplete = true;
     this.hero.body!.setVelocity(0, 0);
+    this.hero.body!.setGravityY(0); // prevent falling through terrain during the exit delay
 
     // Build hero status updates
     const heroUpdates = [
