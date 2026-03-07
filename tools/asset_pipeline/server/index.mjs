@@ -93,7 +93,7 @@ async function processRasterAsset(file, draft) {
     }
 
     pipeline = pipeline.resize(Math.max(1, draft.exportWidth), Math.max(1, draft.exportHeight), {
-      fit: 'contain',
+      fit: toSharpFit(draft.resizeFit),
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     });
 
@@ -132,7 +132,7 @@ async function processRasterAsset(file, draft) {
 
       const frameBuffer = await applyFormat(
         frame.resize(targetFrameWidth, targetFrameHeight, {
-          fit: 'contain',
+          fit: toSharpFit(draft.resizeFit),
           background: { r: 0, g: 0, b: 0, alpha: 0 },
         }),
         'png',
@@ -186,6 +186,7 @@ async function processVideoAsset(file, draft) {
   const targetFrameWidth = Math.max(1, draft.exportWidth);
   const targetFrameHeight = Math.max(1, draft.exportHeight);
   const fps = Math.max(1, draft.frameRate);
+  const extractionFilter = buildVideoExtractionFilter(targetFrameWidth, targetFrameHeight, fps, draft.resizeFit);
 
   const args = [
     '-y',
@@ -201,22 +202,27 @@ async function processVideoAsset(file, draft) {
 
   args.push(
     '-vf',
-    `fps=${fps},scale=${targetFrameWidth}:${targetFrameHeight}:flags=lanczos`,
-    '-frames:v',
-    `${targetFrameCount}`,
+    extractionFilter,
     path.join(framesDir, 'frame-%04d.png'),
   );
 
   await runCommand(ffmpegPath, args, workDir);
-  const frameNames = (await fs.readdir(framesDir)).filter((name) => name.endsWith('.png')).sort();
+  const extractedFrameNames = (await fs.readdir(framesDir)).filter((name) => name.endsWith('.png')).sort();
 
-  if (frameNames.length === 0) {
+  if (extractedFrameNames.length === 0) {
     await fs.rm(workDir, { recursive: true, force: true });
     throw new Error('No frames were extracted from the video.');
   }
 
+  const frameNames = sampleFrameNames(extractedFrameNames, targetFrameCount, draft.videoSampling);
+
   const composites = [];
   const notes = ['Video processed into spritesheet with local FFmpeg extraction.'];
+  if (draft.videoSampling === 'spread') {
+    notes.push('Frames were sampled evenly across the trimmed clip.');
+  } else {
+    notes.push('Frames were taken sequentially from the trimmed clip.');
+  }
   for (let index = 0; index < targetFrameCount; index += 1) {
     const frameName = frameNames[Math.min(index, frameNames.length - 1)];
     let frame = sharp(path.join(framesDir, frameName));
@@ -392,6 +398,7 @@ function buildPersistedMetadata(draft, file, result) {
     mode: draft.mode,
     outputFormat: result.outputFormat,
     maintainAspectRatio: !!draft.maintainAspectRatio,
+    resizeFit: draft.resizeFit,
     outputRelativePath,
     outputAbsolutePath,
     metadataAbsolutePath,
@@ -422,6 +429,7 @@ function buildPersistedMetadata(draft, file, result) {
       trimStartSeconds: draft.trimStartSeconds,
       trimEndSeconds: draft.trimEndSeconds,
       requestedFrameRate: draft.frameRate,
+      sampling: draft.videoSampling,
     },
     source: {
       kind: draft.mode === 'video' ? 'video' : 'image',
@@ -478,4 +486,43 @@ function runCommand(command, args, cwd) {
       reject(new Error(stderr || `Command failed with exit code ${code}`));
     });
   });
+}
+
+function toSharpFit(mode) {
+  switch (mode) {
+    case 'cover':
+      return 'cover';
+    case 'fill':
+      return 'fill';
+    case 'contain':
+    default:
+      return 'contain';
+  }
+}
+
+function buildVideoExtractionFilter(width, height, fps, resizeFit) {
+  const safeFps = Math.max(1, Math.round(fps));
+  if (resizeFit === 'fill') {
+    return `fps=${safeFps},scale=${width}:${height}:flags=lanczos`;
+  }
+
+  if (resizeFit === 'cover') {
+    return `fps=${safeFps},scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
+  }
+
+  return `fps=${safeFps},scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000`;
+}
+
+function sampleFrameNames(frameNames, targetFrameCount, mode) {
+  if (frameNames.length <= targetFrameCount || mode !== 'spread') {
+    return frameNames;
+  }
+
+  const sampled = [];
+  for (let index = 0; index < targetFrameCount; index += 1) {
+    const ratio = targetFrameCount === 1 ? 0 : index / (targetFrameCount - 1);
+    const sourceIndex = Math.min(frameNames.length - 1, Math.round(ratio * (frameNames.length - 1)));
+    sampled.push(frameNames[sourceIndex]);
+  }
+  return sampled;
 }

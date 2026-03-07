@@ -15,6 +15,7 @@ export function createDefaultDraft(): AssetDraft {
     mode: 'image',
     outputFormat: 'webp',
     maintainAspectRatio: true,
+    resizeFit: 'contain',
     exportWidth: 1024,
     exportHeight: 1024,
     displayWidth: 160,
@@ -30,6 +31,7 @@ export function createDefaultDraft(): AssetDraft {
     notes: '',
     trimStartSeconds: 0,
     trimEndSeconds: 0,
+    videoSampling: 'spread',
   };
 }
 
@@ -58,6 +60,7 @@ export function buildAssetMetadata(draft: AssetDraft, source: SourceInfo | null)
     mode: draft.mode,
     outputFormat: draft.outputFormat,
     maintainAspectRatio: draft.maintainAspectRatio,
+    resizeFit: draft.resizeFit,
     exportSize: {
       width: draft.exportWidth,
       height: draft.exportHeight,
@@ -82,6 +85,7 @@ export function buildAssetMetadata(draft: AssetDraft, source: SourceInfo | null)
       trimStartSeconds: draft.trimStartSeconds,
       trimEndSeconds: draft.trimEndSeconds,
       requestedFrameRate: draft.frameRate,
+      sampling: draft.videoSampling,
     },
     source,
     generatedAt: new Date().toISOString(),

@@ -170,6 +170,11 @@ button {
   text-align: left;
 }
 
+.collapsible-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .collapsible-trigger:disabled {
   cursor: not-allowed;
 }
@@ -189,6 +194,15 @@ button {
 
 .collapsible-chevron.open {
   transform: rotate(180deg);
+}
+
+.section-lock-note {
+  display: inline-flex;
+  margin-left: 54px;
+  margin-top: 4px;
+  color: #8ea0d8;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .panel-header {
@@ -316,9 +330,10 @@ button {
 .toggle-field {
   flex-direction: row;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
-  padding: 12px 14px;
+  min-height: 76px;
+  padding: 10px 14px;
   border-radius: 16px;
   border: 1px solid rgba(141, 164, 239, 0.14);
   background: rgba(14, 20, 37, 0.8);
@@ -333,13 +348,14 @@ button {
   display: block;
   font-size: 14px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.25;
 }
 
 .toggle-helper {
   display: block;
-  margin-top: 4px;
-  line-height: 1.45;
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.35;
 }
 
 .toggle {
@@ -347,7 +363,6 @@ button {
   flex: 0 0 auto;
   width: 54px;
   height: 30px;
-  margin-top: 2px;
   border: none;
   border-radius: 999px;
   background: #22314d;
@@ -409,8 +424,7 @@ button {
   gap: 16px;
 }
 
-.preview-canvas,
-.video-preview {
+.preview-canvas {
   width: 100%;
   border-radius: 20px;
   border: 1px solid rgba(145, 169, 255, 0.16);
@@ -420,10 +434,6 @@ button {
 .preview-canvas {
   touch-action: none;
   cursor: crosshair;
-}
-
-.video-preview {
-  max-height: 220px;
 }
 
 .preview-legend {
@@ -479,6 +489,43 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.save-feedback {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(145, 169, 255, 0.16);
+}
+
+.save-feedback strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.save-feedback p {
+  margin: 0;
+  color: #bdd0ff;
+  font-size: 14px;
+}
+
+.save-feedback-success {
+  background: rgba(18, 56, 42, 0.72);
+  border-color: rgba(88, 228, 157, 0.3);
+  color: #8df0c3;
+}
+
+.save-feedback-saving {
+  background: rgba(25, 42, 76, 0.72);
+  border-color: rgba(126, 198, 255, 0.28);
+  color: #a8d6ff;
+}
+
+.save-feedback-error {
+  background: rgba(68, 26, 32, 0.74);
+  border-color: rgba(255, 122, 143, 0.28);
+  color: #ff9fb0;
 }
 
 .export-actions {

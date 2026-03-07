@@ -2,6 +2,8 @@ export type AssetCategory = 'backgrounds' | 'sprites' | 'ui' | 'animations';
 export type ImportMode = 'image' | 'spritesheet' | 'video';
 export type OutputFormat = 'webp' | 'png' | 'jpg' | 'avif';
 export type AnimationType = 'idle' | 'walk' | 'run' | 'jump' | 'attack' | 'hurt' | 'death' | 'custom';
+export type ResizeFitMode = 'contain' | 'cover' | 'fill';
+export type VideoSamplingMode = 'sequential' | 'spread';
 
 export interface Rect {
   x: number;
@@ -32,6 +34,7 @@ export interface AssetDraft {
   mode: ImportMode;
   outputFormat: OutputFormat;
   maintainAspectRatio: boolean;
+  resizeFit: ResizeFitMode;
   exportWidth: number;
   exportHeight: number;
   displayWidth: number;
@@ -47,6 +50,7 @@ export interface AssetDraft {
   notes: string;
   trimStartSeconds: number;
   trimEndSeconds: number;
+  videoSampling: VideoSamplingMode;
 }
 
 export interface AssetMetadataDocument {
@@ -56,6 +60,7 @@ export interface AssetMetadataDocument {
   mode: ImportMode;
   outputFormat: OutputFormat;
   maintainAspectRatio: boolean;
+  resizeFit: ResizeFitMode;
   exportSize: { width: number; height: number };
   displaySize: { width: number; height: number };
   optimization: {
@@ -74,6 +79,7 @@ export interface AssetMetadataDocument {
     trimStartSeconds: number;
     trimEndSeconds: number;
     requestedFrameRate: number;
+    sampling: VideoSamplingMode;
   };
   source: SourceInfo | null;
   generatedAt: string;

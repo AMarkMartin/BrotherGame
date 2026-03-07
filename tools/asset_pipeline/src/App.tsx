@@ -4,6 +4,7 @@ import {
   Boxes,
   ChevronDown,
   Clapperboard,
+  CircleCheckBig,
   Download,
   Film,
   ImagePlus,
@@ -11,7 +12,7 @@ import {
   Sparkles,
   WandSparkles,
 } from 'lucide-react';
-import type { AssetCategory, AssetDraft, AnimationType, OutputFormat, SourceInfo } from './types';
+import type { AssetCategory, AssetDraft, AnimationType, OutputFormat, ResizeFitMode, SourceInfo, VideoSamplingMode } from './types';
 import {
   buildAssetMetadata,
   buildManifestRow,
@@ -29,14 +30,19 @@ import { fetchBackendHealth, processAssetInWorkspace, type SavedAssetResult } fr
 const CATEGORY_OPTIONS: AssetCategory[] = ['backgrounds', 'sprites', 'ui', 'animations'];
 const OUTPUT_FORMATS: OutputFormat[] = ['webp', 'png', 'jpg', 'avif'];
 const ANIMATION_TYPES: AnimationType[] = ['idle', 'walk', 'run', 'jump', 'attack', 'hurt', 'death', 'custom'];
+const RESIZE_FIT_OPTIONS: ResizeFitMode[] = ['contain', 'cover', 'fill'];
+const VIDEO_SAMPLING_OPTIONS: VideoSamplingMode[] = ['spread', 'sequential'];
 
 export default function App() {
   const [draft, setDraft] = useState<AssetDraft>(createDefaultDraft);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceInfo, setSourceInfo] = useState<SourceInfo | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<HTMLImageElement | null>(null);
+  const [videoPreviewSheet, setVideoPreviewSheet] = useState<HTMLCanvasElement | null>(null);
+  const [videoPreviewInfo, setVideoPreviewInfo] = useState<SourceInfo | null>(null);
+  const [isPreparingVideoPreview, setIsPreparingVideoPreview] = useState(false);
   const [status, setStatus] = useState<string>('Load an image or video to begin.');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [backendReady, setBackendReady] = useState(false);
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false);
   const [savedAsset, setSavedAsset] = useState<SavedAssetResult | null>(null);
@@ -64,15 +70,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (saveState !== 'success') {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSaveState('idle');
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [saveState]);
+
+  useEffect(() => {
     if (!selectedFile) {
-      setPreviewUrl(null);
       setSourceInfo(null);
       setPreviewImage(null);
+      setVideoPreviewSheet(null);
+      setVideoPreviewInfo(null);
+      setIsPreparingVideoPreview(false);
       return;
     }
 
     const url = URL.createObjectURL(selectedFile);
-    setPreviewUrl(url);
 
     let revoked = false;
     const baseName = selectedFile.name.replace(/\.[^.]+$/, '');
@@ -153,6 +174,61 @@ export default function App() {
       URL.revokeObjectURL(url);
     };
   }, [selectedFile]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function buildVideoPreview(): Promise<void> {
+      if (!selectedFile || !sourceInfo || sourceInfo.kind !== 'video' || draft.mode !== 'video') {
+        setVideoPreviewSheet(null);
+        setVideoPreviewInfo(null);
+        setIsPreparingVideoPreview(false);
+        return;
+      }
+
+      setIsPreparingVideoPreview(true);
+      try {
+        const sheet = await createSpritesheetPreviewFromVideo(selectedFile, draft, sourceInfo);
+        if (cancelled) return;
+        setVideoPreviewSheet(sheet);
+        setVideoPreviewInfo({
+          kind: 'image',
+          name: `${selectedFile.name}-preview-sheet`,
+          mimeType: 'image/png',
+          sizeBytes: 0,
+          width: sheet.width,
+          height: sheet.height,
+        });
+      } catch {
+        if (cancelled) return;
+        setVideoPreviewSheet(null);
+        setVideoPreviewInfo(null);
+      } finally {
+        if (!cancelled) {
+          setIsPreparingVideoPreview(false);
+        }
+      }
+    }
+
+    void buildVideoPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedFile,
+    sourceInfo,
+    draft.mode,
+    draft.columns,
+    draft.rows,
+    draft.frameRate,
+    draft.exportWidth,
+    draft.exportHeight,
+    draft.trimStartSeconds,
+    draft.trimEndSeconds,
+    draft.videoSampling,
+    draft.resizeFit,
+    draft.removeBackground,
+  ]);
 
   useEffect(() => {
     setOpenSections((current) => ({
@@ -248,20 +324,25 @@ export default function App() {
   async function handleSaveToWorkspace(): Promise<void> {
     if (!selectedFile) {
       setStatus('Select a source file first.');
+      setSaveState('error');
       return;
     }
 
     if (!backendReady) {
       setStatus('Start the local asset backend with `npm run server` in tools/asset_pipeline.');
+      setSaveState('error');
       return;
     }
 
     try {
+      setSaveState('saving');
       setStatus('Processing asset in workspace...');
       const result = await processAssetInWorkspace(selectedFile, draft);
       setSavedAsset(result);
+      setSaveState('success');
       setStatus(`Saved to ${result.outputRelativePath}`);
     } catch (error) {
+      setSaveState('error');
       setStatus(error instanceof Error ? error.message : 'Workspace processing failed.');
     }
   }
@@ -278,6 +359,8 @@ export default function App() {
 
   function handleFileSelected(file: File | null): void {
     setSelectedFile(file);
+    setSavedAsset(null);
+    setSaveState('idle');
     if (!file) {
       setStatus('Selection cleared.');
       return;
@@ -416,6 +499,13 @@ export default function App() {
               <NumberField label="Export height" value={draft.exportHeight} min={1} onChange={(value) => handleSizedValueChange('export', 'height', value)} />
               <NumberField label="Display width" value={draft.displayWidth} min={1} onChange={(value) => handleSizedValueChange('display', 'width', value)} />
               <NumberField label="Display height" value={draft.displayHeight} min={1} onChange={(value) => handleSizedValueChange('display', 'height', value)} />
+              <SelectField
+                label="Resize fit"
+                value={draft.resizeFit}
+                options={RESIZE_FIT_OPTIONS}
+                onChange={(value) => updateDraft(setDraft, 'resizeFit', value as ResizeFitMode)}
+                helper="Contain keeps the full frame, cover fills and crops, fill stretches to fit."
+              />
             </div>
           </CollapsibleSection>
 
@@ -455,9 +545,23 @@ export default function App() {
               <div className="field-grid two-column">
                 <NumberField label="Trim start (s)" value={draft.trimStartSeconds} min={0} step={0.1} onChange={(value) => updateDraft(setDraft, 'trimStartSeconds', value)} />
                 <NumberField label="Trim end (s)" value={draft.trimEndSeconds} min={0} step={0.1} onChange={(value) => updateDraft(setDraft, 'trimEndSeconds', value)} />
+                <SelectField
+                  label="Frame sampling"
+                  value={draft.videoSampling}
+                  options={VIDEO_SAMPLING_OPTIONS}
+                  onChange={(value) => updateDraft(setDraft, 'videoSampling', value as VideoSamplingMode)}
+                  helper="Spread samples across the clip. Sequential takes the earliest frames in order."
+                />
+                <SelectField
+                  label="Frame fit"
+                  value={draft.resizeFit}
+                  options={RESIZE_FIT_OPTIONS}
+                  onChange={(value) => updateDraft(setDraft, 'resizeFit', value as ResizeFitMode)}
+                  helper="Choose whether each extracted frame should pad, crop, or stretch into the target cell."
+                />
               </div>
               <p className="helper-text">
-                The backend can extract frames with FFmpeg into a fixed-grid spritesheet using the settings above.
+                The backend will extract {draft.columns * draft.rows} frames at up to {draft.frameRate} fps, then build a {draft.columns} × {draft.rows} spritesheet using {draft.videoSampling} sampling and {draft.resizeFit} fit.
               </p>
             </CollapsibleSection>
           )}
@@ -472,12 +576,11 @@ export default function App() {
           <PreviewCanvas
             draft={draft}
             previewImage={previewImage}
-            sourceInfo={sourceInfo}
+            sourceInfo={draft.mode === 'video' ? videoPreviewInfo : sourceInfo}
+            previewSourceOverride={draft.mode === 'video' ? videoPreviewSheet : null}
+            isPreparingVideoPreview={draft.mode === 'video' && isPreparingVideoPreview}
             onDraftChange={setDraft}
           />
-          {draft.mode === 'video' && previewUrl && (
-            <video className="video-preview" src={previewUrl} controls muted playsInline />
-          )}
           <div className="preview-legend">
             <LegendSwatch color="rgba(88, 228, 157, 0.9)" label="Origin point" />
             <LegendSwatch color="rgba(255, 127, 80, 0.9)" label="Collision box" />
@@ -486,7 +589,7 @@ export default function App() {
         </section>
 
         <section className="panel stack">
-          <PanelHeader icon={<WandSparkles size={18} />} title="Output plan" subtitle="Save the asset into the workspace when the preview looks right." />
+          <PanelHeader icon={<WandSparkles size={18} />} title="Save" subtitle="When the preview looks right, save the asset into the workspace." />
           <div className="summary-card">
             <span className="summary-label">Destination</span>
             <strong>{outputPath}</strong>
@@ -501,10 +604,36 @@ export default function App() {
             <InfoTile label="Animation" value={draft.mode === 'image' ? 'N/A' : `${draft.animationType} @ ${draft.frameRate} fps`} />
           </div>
 
+          {saveState !== 'idle' ? (
+            <div className={`save-feedback save-feedback-${saveState}`}>
+              {saveState === 'success' ? <CircleCheckBig size={18} /> : <WandSparkles size={18} />}
+              <div>
+                <strong>
+                  {saveState === 'saving'
+                    ? 'Saving asset…'
+                    : saveState === 'success'
+                      ? 'Asset saved'
+                      : 'Save failed'}
+                </strong>
+                <p>
+                  {saveState === 'saving'
+                    ? 'Processing files and updating metadata in the workspace.'
+                    : saveState === 'success'
+                      ? savedAsset?.outputRelativePath ?? 'The asset and metadata were written to the workspace.'
+                      : 'Check the status bar for the failure reason, then try again.'}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           <div className="export-actions">
-            <button className="primary-button" onClick={handleSaveToWorkspace} disabled={!canProcessToWorkspace || !backendReady}>
+            <button className="primary-button" onClick={handleSaveToWorkspace} disabled={!canProcessToWorkspace || !backendReady || saveState === 'saving'}>
               <WandSparkles size={16} />
-              {draft.mode === 'video' ? 'Build and save spritesheet' : 'Process and save to workspace'}
+              {saveState === 'saving'
+                ? 'Saving…'
+                : draft.mode === 'video'
+                  ? 'Save spritesheet to workspace'
+                  : 'Save to workspace'}
             </button>
           </div>
 
@@ -514,10 +643,10 @@ export default function App() {
               {!hasSelectedSource
                 ? 'Import a source file to unlock processing and downloads.'
                 : !backendReady
-                  ? 'Start the backend with npm run asset-manager:server to save directly into the repo.'
+                  ? 'Start the backend with npm run asset-manager:server, then save directly into the repo.'
                   : draft.mode === 'video' && !ffmpegAvailable
                     ? 'FFmpeg is unavailable, so video processing is disabled.'
-                    : 'Preview looks good — use Process and save to workspace.'}
+                    : 'Preview looks good — use Save to workspace.'}
             </p>
           </div>
 
@@ -571,11 +700,15 @@ function PreviewCanvas({
   draft,
   previewImage,
   sourceInfo,
+  previewSourceOverride,
+  isPreparingVideoPreview,
   onDraftChange,
 }: {
   draft: AssetDraft;
   previewImage: HTMLImageElement | null;
   sourceInfo: SourceInfo | null;
+  previewSourceOverride: HTMLCanvasElement | null;
+  isPreparingVideoPreview: boolean;
   onDraftChange: Dispatch<SetStateAction<AssetDraft>>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -606,6 +739,11 @@ function PreviewCanvas({
     let cancelled = false;
 
     async function preparePreview(): Promise<void> {
+      if (previewSourceOverride) {
+        setPreviewSource(previewSourceOverride);
+        return;
+      }
+
       if (!previewImage) {
         setPreviewSource(null);
         return;
@@ -626,7 +764,7 @@ function PreviewCanvas({
     return () => {
       cancelled = true;
     };
-  }, [previewImage, draft.removeBackground]);
+  }, [previewImage, previewSourceOverride, draft.removeBackground]);
 
   useEffect(() => {
     let frameId = 0;
@@ -663,7 +801,11 @@ function PreviewCanvas({
       if (!previewSource || !sourceInfo || sourceInfo.kind !== 'image') {
         context.fillStyle = 'rgba(255,255,255,0.86)';
         context.font = '16px Inter, sans-serif';
-        context.fillText('Load an image or spritesheet to preview grounding.', 22, 34);
+        context.fillText(
+          isPreparingVideoPreview ? 'Generating spritesheet preview from video…' : 'Load an image or spritesheet to preview grounding.',
+          22,
+          34,
+        );
         frameId = requestAnimationFrame(draw);
         return;
       }
@@ -761,7 +903,7 @@ function PreviewCanvas({
 
     frameId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frameId);
-  }, [draft, previewSource, sourceInfo]);
+  }, [draft, previewSource, sourceInfo, isPreparingVideoPreview]);
 
   function getCanvasPoint(event: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -907,7 +1049,10 @@ function CollapsibleSection({
   return (
     <section className={`collapsible-section ${disabled ? 'disabled' : ''}`}>
       <button type="button" className="collapsible-trigger" onClick={onToggle} disabled={disabled}>
-        <PanelHeader icon={icon} title={title} subtitle={subtitle} />
+        <div className="collapsible-heading">
+          <PanelHeader icon={icon} title={title} subtitle={subtitle} />
+          {disabled ? <span className="section-lock-note">Import a source to unlock</span> : null}
+        </div>
         <ChevronDown size={18} className={`collapsible-chevron ${open ? 'open' : ''}`} />
       </button>
       {open && !disabled ? <div className="collapsible-body">{children}</div> : null}
@@ -973,7 +1118,19 @@ function NumberField({
   );
 }
 
-function SelectField({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+  helper,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+  helper?: string;
+}) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -984,6 +1141,7 @@ function SelectField({ label, value, options, onChange }: { label: string; value
           </option>
         ))}
       </select>
+      {helper ? <small>{helper}</small> : null}
     </label>
   );
 }
@@ -1039,6 +1197,178 @@ function safeAspectRatio(width: number, height: number): number {
   return safeHeight / safeWidth;
 }
 
+async function createSpritesheetPreviewFromVideo(
+  file: File,
+  draft: AssetDraft,
+  sourceInfo: SourceInfo,
+): Promise<HTMLCanvasElement> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.preload = 'auto';
+  video.muted = true;
+  video.playsInline = true;
+
+  try {
+    await loadVideoElement(video, url);
+
+    const columns = Math.max(1, draft.columns);
+    const rows = Math.max(1, draft.rows);
+    const frameCount = Math.max(1, columns * rows);
+    const frameWidth = Math.max(1, Math.round(draft.exportWidth));
+    const frameHeight = Math.max(1, Math.round(draft.exportHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = frameWidth * columns;
+    canvas.height = frameHeight * rows;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Canvas 2D context is unavailable.');
+    }
+
+    const clipStart = Math.max(0, draft.trimStartSeconds ?? 0);
+    const videoDuration = Number.isFinite(sourceInfo.durationSeconds) ? sourceInfo.durationSeconds ?? 0 : Number.isFinite(video.duration) ? video.duration : 0;
+    const explicitEnd = (draft.trimEndSeconds ?? 0) > clipStart ? draft.trimEndSeconds : videoDuration;
+    const clipEnd = explicitEnd > clipStart ? Math.min(explicitEnd, videoDuration || explicitEnd) : videoDuration;
+    const safeClipEnd = clipEnd > clipStart ? clipEnd : clipStart;
+    const maxSeekTime = Math.max(clipStart, safeClipEnd - 0.001);
+
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      const targetTime = getPreviewFrameTime(frameIndex, frameCount, clipStart, maxSeekTime, draft.frameRate, draft.videoSampling);
+      await seekVideoElement(video, targetTime);
+
+      const col = frameIndex % columns;
+      const row = Math.floor(frameIndex / columns);
+      drawMediaWithFit(
+        context,
+        video,
+        col * frameWidth,
+        row * frameHeight,
+        frameWidth,
+        frameHeight,
+        draft.resizeFit,
+      );
+    }
+
+    if (draft.removeBackground) {
+      return removeBackgroundFromCanvas(canvas);
+    }
+
+    return canvas;
+  } finally {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function getPreviewFrameTime(
+  frameIndex: number,
+  frameCount: number,
+  clipStart: number,
+  clipEnd: number,
+  frameRate: number,
+  samplingMode: VideoSamplingMode,
+): number {
+  if (samplingMode === 'sequential') {
+    return Math.min(clipEnd, clipStart + frameIndex / Math.max(1, frameRate));
+  }
+
+  if (frameCount <= 1) {
+    return clipStart;
+  }
+
+  const ratio = frameIndex / Math.max(1, frameCount - 1);
+  return clipStart + (clipEnd - clipStart) * ratio;
+}
+
+function drawMediaWithFit(
+  context: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  fit: ResizeFitMode,
+): void {
+  const sourceWidth = getCanvasImageSourceWidth(source);
+  const sourceHeight = getCanvasImageSourceHeight(source);
+  if (sourceWidth <= 0 || sourceHeight <= 0) {
+    return;
+  }
+
+  context.clearRect(dx, dy, dw, dh);
+
+  if (fit === 'fill') {
+    context.drawImage(source, dx, dy, dw, dh);
+    return;
+  }
+
+  const scale = fit === 'cover'
+    ? Math.max(dw / sourceWidth, dh / sourceHeight)
+    : Math.min(dw / sourceWidth, dh / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  const offsetX = dx + (dw - drawWidth) / 2;
+  const offsetY = dy + (dh - drawHeight) / 2;
+  context.drawImage(source, offsetX, offsetY, drawWidth, drawHeight);
+}
+
+function getCanvasImageSourceWidth(source: CanvasImageSource): number {
+  if (source instanceof HTMLVideoElement) return source.videoWidth;
+  if (source instanceof HTMLImageElement) return source.naturalWidth;
+  if (source instanceof HTMLCanvasElement) return source.width;
+  if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) return source.width;
+  if (typeof OffscreenCanvas !== 'undefined' && source instanceof OffscreenCanvas) return source.width;
+  return 0;
+}
+
+function getCanvasImageSourceHeight(source: CanvasImageSource): number {
+  if (source instanceof HTMLVideoElement) return source.videoHeight;
+  if (source instanceof HTMLImageElement) return source.naturalHeight;
+  if (source instanceof HTMLCanvasElement) return source.height;
+  if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) return source.height;
+  if (typeof OffscreenCanvas !== 'undefined' && source instanceof OffscreenCanvas) return source.height;
+  return 0;
+}
+
+function loadVideoElement(video: HTMLVideoElement, url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      video.onloadeddata = null;
+      video.onerror = null;
+    };
+
+    video.onloadeddata = () => {
+      cleanup();
+      resolve();
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('Unable to load video for preview generation.'));
+    };
+    video.src = url;
+  });
+}
+
+function seekVideoElement(video: HTMLVideoElement, time: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      video.onseeked = null;
+      video.onerror = null;
+    };
+
+    video.onseeked = () => {
+      cleanup();
+      resolve();
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('Video seeking failed during preview generation.'));
+    };
+    video.currentTime = Math.max(0, time);
+  });
+}
+
 async function createBackgroundRemovedCanvas(image: HTMLImageElement): Promise<HTMLCanvasElement> {
   const canvas = document.createElement('canvas');
   canvas.width = image.naturalWidth;
@@ -1050,6 +1380,21 @@ async function createBackgroundRemovedCanvas(image: HTMLImageElement): Promise<H
 
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0);
+
+  return removeBackgroundFromCanvas(canvas);
+}
+
+function removeBackgroundFromCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return source;
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(source, 0, 0);
 
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const background = sampleCornerColor(imageData.data, canvas.width, canvas.height);

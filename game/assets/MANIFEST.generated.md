@@ -4,4 +4,4 @@
 
 | ID | Description | Path | Size | Format | Status |
 |---|---|---|---|---|---|
-
+| `walk_cycle_spider` | Generated from video (walk) | `animations/walk_cycle_spider.webp` | 6×6 cells, 124×70 display | webp spritesheet | generated |
