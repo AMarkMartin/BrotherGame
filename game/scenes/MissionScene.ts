@@ -24,6 +24,8 @@ import type { IAudioService } from '@services/IAudioService';
 import type { MissionContext, MissionResult } from '@data/MissionContext';
 import type { ResourceSurface } from '@data/HexTile';
 import type { ServiceBundle } from '../../src/main';
+import { Enemy, SmallEnemy, MediumEnemy, LargeEnemy, type PendingProjectile } from '../entities/Enemy';
+import { type WeaponDef, WEAPONS } from '../entities/Weapon';
 
 export const MISSION_SCENE_KEY = 'MissionScene';
 
@@ -64,6 +66,29 @@ export class MissionScene extends Phaser.Scene {
   private heroNameTag: Phaser.GameObjects.Text | null = null;
   /** Per-column ground heights — terrain heightmap */
   private heightMap: number[] = [];
+  private enemies: Enemy[] = [];
+
+  // Combat
+  private equippedWeapon!: WeaponDef;
+  private attackCooldownUntil = 0;
+  private heroFacing: 1 | -1 = 1;
+  private swingGfx: Phaser.GameObjects.Graphics | null = null;
+  private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
+
+  // Hero HP
+  private heroHp     = 10;
+  private heroMaxHp  = 10;
+  private heroInvincibleUntil = 0;
+  private heroHpGfx!: Phaser.GameObjects.Graphics;
+
+  // Projectiles (spawned by ranged enemies)
+  private projectiles: Array<{
+    gfx: Phaser.GameObjects.Graphics;
+    x: number; y: number;
+    velX: number;
+    damage: number;
+    expiresAt: number;
+  }> = [];
 
   constructor() {
     super({ key: MISSION_SCENE_KEY });
@@ -83,6 +108,14 @@ export class MissionScene extends Phaser.Scene {
     this.resourcesGathered = {};
     this.missionComplete = false;
     this.isGrounded = false;
+    this.enemies = [];
+    this.equippedWeapon = WEAPONS.sword;
+    this.attackCooldownUntil = 0;
+    this.heroFacing = 1;
+    this.swingGfx = null;
+    this.heroHp = this.heroMaxHp;
+    this.heroInvincibleUntil = 0;
+    this.projectiles = [];
 
     const ctx = this.gsm.missionContext;
     if (!ctx) {
@@ -106,6 +139,9 @@ export class MissionScene extends Phaser.Scene {
     this.groundGroup = this.physics.add.staticGroup();
     this.platformGroup = this.physics.add.staticGroup();
     this._buildTerrain(biome);
+
+    // ── Enemies ───────────────────────────────────────────
+    this._spawnEnemies();
 
     // ── Pickups ───────────────────────────────────────────
     this.pickupGroup = this.physics.add.group();
@@ -138,8 +174,12 @@ export class MissionScene extends Phaser.Scene {
 
     // ── Input ─────────────────────────────────────────────
     this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
     this.input.keyboard!.on('keydown-ESC', () => {
       if (!this.missionComplete) this._completeMission('retreat');
+    });
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (!this.missionComplete && pointer.leftButtonDown()) this._performAttack();
     });
 
     // ── Camera ────────────────────────────────────────────
@@ -187,18 +227,24 @@ export class MissionScene extends Phaser.Scene {
       this.jumpsRemaining = 2;
     }
 
-    // ── Horizontal movement ────────────────────────────────────────────────
-    if (this.cursors.left.isDown) {
+    // ── Horizontal movement (arrows or WASD) ──────────────────────────────
+    const movingLeft  = this.cursors.left.isDown  || this.wasd.A.isDown;
+    const movingRight = this.cursors.right.isDown || this.wasd.D.isDown;
+    if (movingLeft) {
       body.setVelocityX(-HERO_SPEED);
-    } else if (this.cursors.right.isDown) {
+      this.heroFacing = -1;
+    } else if (movingRight) {
       body.setVelocityX(HERO_SPEED);
+      this.heroFacing = 1;
     } else {
       body.setVelocityX(0);
     }
+    this.hero.setFlipX(this.heroFacing < 0);
 
-    // ── Jump (double jump supported) ──────────────────────────────────────
+    // ── Jump (double jump supported — Up, Space, or W) ────────────────────
     const jumpPressed = Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
-                        Phaser.Input.Keyboard.JustDown(this.cursors.space!);
+                        Phaser.Input.Keyboard.JustDown(this.cursors.space!) ||
+                        Phaser.Input.Keyboard.JustDown(this.wasd.W);
     if (jumpPressed && (onGround || this.jumpsRemaining > 0)) {
       body.setVelocityY(JUMP_VELOCITY);
       this.isGrounded = false;
@@ -208,6 +254,82 @@ export class MissionScene extends Phaser.Scene {
     // Update name tag position to follow the hero
     if (this.heroNameTag) {
       this.heroNameTag.setPosition(this.hero.x, this.hero.y - 110);
+    }
+
+    // Update enemies + contact damage
+    const now   = this.time.now;
+    const heroX = this.hero.x;
+    const heroY = this.hero.body!.y + this.hero.body!.height / 2;
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i]!;
+      enemy.update(heroX, heroY);
+
+      // Spawn any projectile the enemy fired this frame
+      if (enemy.pendingProjectile) {
+        this._spawnProjectile(enemy.pendingProjectile);
+        enemy.pendingProjectile = null;
+      }
+
+      if (enemy.isDead) {
+        enemy.destroy();
+        this.enemies.splice(i, 1);
+        continue;
+      }
+
+      // AABB contact damage
+      if (now >= this.heroInvincibleUntil) {
+        const hb = this.hero.body!;
+        const eb = enemy.gameObject.body as Phaser.Physics.Arcade.Body;
+        if (hb.x < eb.x + eb.width  && hb.x + hb.width  > eb.x &&
+            hb.y < eb.y + eb.height && hb.y + hb.height > eb.y) {
+          this.heroHp = Math.max(0, this.heroHp - enemy.contactDamage);
+          this.heroInvincibleUntil = now + 800;
+          const pushDir = this.hero.x < enemy.gameObject.x ? -1 : 1;
+          this.hero.body!.setVelocityX(pushDir * 220);
+          this.hero.body!.setVelocityY(-180);
+          this.isGrounded = false;
+          this.hero.setTint(0xff3333);
+          this.time.delayedCall(250, () => { this.hero.clearTint(); });
+          if (this.heroHp <= 0) { this._completeMission('failure'); return; }
+        }
+      }
+    }
+
+    // Update projectiles
+    const dt = this.game.loop.delta / 1000;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i]!;
+      p.x += p.velX * dt;
+
+      if (now >= p.expiresAt || p.x < 0 || p.x > WORLD_W) {
+        p.gfx.destroy();
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+
+      // Redraw as a glowing orb
+      p.gfx.clear();
+      p.gfx.fillStyle(0xff4400, 0.35);
+      p.gfx.fillCircle(p.x, p.y, 13);
+      p.gfx.fillStyle(0xff7733, 1);
+      p.gfx.fillCircle(p.x, p.y, 7);
+      p.gfx.fillStyle(0xffdd88, 0.9);
+      p.gfx.fillCircle(p.x, p.y, 3);
+
+      // Hero collision
+      if (now >= this.heroInvincibleUntil) {
+        const hb = this.hero.body!;
+        if (p.x > hb.x && p.x < hb.x + hb.width &&
+            p.y > hb.y && p.y < hb.y + hb.height) {
+          this.heroHp = Math.max(0, this.heroHp - p.damage);
+          this.heroInvincibleUntil = now + 600;
+          this.hero.setTint(0xff3333);
+          this.time.delayedCall(250, () => { this.hero.clearTint(); });
+          p.gfx.destroy();
+          this.projectiles.splice(i, 1);
+          if (this.heroHp <= 0) { this._completeMission('failure'); return; }
+        }
+      }
     }
 
     // Update HUD
@@ -397,6 +519,102 @@ export class MissionScene extends Phaser.Scene {
       const platBody = this.add.zone(px, py + 9, pw, 18);
       this.platformGroup.add(platBody);
     }
+  }
+
+  // ── Enemy spawning ─────────────────────────────────────
+
+  private _spawnEnemies(): void {
+    const danger = this.context.dangerLevel;
+    const gt = this._getGroundYInterp.bind(this);
+
+    // Scale counts with danger level (1–5)
+    const smallCount  = Math.min(danger + 1, 5);
+    const mediumCount = Math.max(0, danger - 1);
+    const largeCount  = Math.max(0, danger - 3);
+    const total = smallCount + mediumCount + largeCount;
+    if (total === 0) return;
+
+    const spacing = (WORLD_W - 400) / (total + 1);
+    let slot = 0;
+
+    const place = (EnemyType: new (s: Phaser.Scene, c: { x: number; patrolRange: number }, g: (x: number) => number) => Enemy) => {
+      const x = 200 + (slot + 1) * spacing + (this._pseudoRandom(slot * 13 + 7) - 0.5) * 80;
+      const patrolRange = 80 + this._pseudoRandom(slot * 31) * 80;
+      this.enemies.push(new EnemyType(this, { x, patrolRange }, gt));
+      slot++;
+    };
+
+    for (let i = 0; i < smallCount;  i++) place(SmallEnemy);
+    for (let i = 0; i < mediumCount; i++) place(MediumEnemy);
+    for (let i = 0; i < largeCount;  i++) place(LargeEnemy);
+  }
+
+  // ── Combat ─────────────────────────────────────────────
+
+  private _performAttack(): void {
+    const now = this.time.now;
+    if (now < this.attackCooldownUntil) return;
+    this.attackCooldownUntil = now + this.equippedWeapon.cooldown;
+
+    const weapon = this.equippedWeapon;
+    const hx = this.hero.x;
+    // Use the hero's vertical centre as the attack origin
+    const hy = this.hero.y - this.hero.body!.height / 2;
+
+    for (const enemy of this.enemies) {
+      const dx = enemy.gameObject.x - hx;
+      const dy = enemy.centerY - hy;
+      // Reject enemies clearly behind the hero (20 px grace for edge cases)
+      if (this.heroFacing > 0 ? dx < -20 : dx > 20) continue;
+      if (Math.sqrt(dx * dx + dy * dy) <= weapon.range) {
+        enemy.takeDamage(weapon.damage);
+        enemy.knockback(this.heroFacing);
+      }
+    }
+
+    this._showSwingGfx(hx, hy);
+  }
+
+  private _spawnProjectile(data: PendingProjectile): void {
+    this.projectiles.push({
+      gfx:       this.add.graphics(),
+      x:         data.x,
+      y:         data.y,
+      velX:      data.dirX * 340,
+      damage:    data.damage,
+      expiresAt: this.time.now + 3000,
+    });
+  }
+
+  private _showSwingGfx(hx: number, hy: number): void {
+    // Replace any in-progress swing graphic
+    this.swingGfx?.destroy();
+
+    const weapon  = this.equippedWeapon;
+    const arcHalf = (weapon.arcDeg * Math.PI) / 180;
+    const center  = this.heroFacing > 0 ? 0 : Math.PI;
+
+    const gfx = this.add.graphics();
+    gfx.fillStyle(weapon.color, 0.45);
+    gfx.lineStyle(2, weapon.color, 0.85);
+    gfx.beginPath();
+    gfx.moveTo(hx, hy);
+    gfx.arc(hx, hy, weapon.range, center - arcHalf, center + arcHalf);
+    gfx.closePath();
+    gfx.fillPath();
+    gfx.strokePath();
+
+    this.swingGfx = gfx;
+    this.tweens.add({
+      targets: gfx,
+      alpha: 0,
+      duration: weapon.swingDuration,
+      ease: 'Power2',
+      onComplete: () => {
+        gfx.destroy();
+        if (this.swingGfx === gfx) this.swingGfx = null;
+      },
+    });
   }
 
   /** Simple deterministic pseudo-random from a seed number (0..1). */
@@ -595,6 +813,17 @@ export class MissionScene extends Phaser.Scene {
     this.hero.body!.setVelocity(0, 0);
     this.hero.body!.setGravityY(0); // prevent falling through terrain during the exit delay
 
+    // Freeze all enemies — update() stops running after missionComplete, so gravity
+    // would otherwise keep pulling them through the terrain.
+    for (const enemy of this.enemies) {
+      enemy.gameObject.body.setVelocity(0, 0);
+      enemy.gameObject.body.setGravityY(0);
+    }
+
+    // Destroy any in-flight projectiles
+    for (const p of this.projectiles) { p.gfx.destroy(); }
+    this.projectiles = [];
+
     // Build hero status updates
     const heroUpdates = [
       {
@@ -672,12 +901,22 @@ export class MissionScene extends Phaser.Scene {
       fontSize: '18px', color: '#aaccaa', fontFamily: 'monospace',
     }).setScrollFactor(0);
 
+    // Hero HP bar
+    this.add.text(14, 72, 'HP', {
+      fontSize: '15px', color: '#ff6666', fontFamily: 'monospace',
+    }).setScrollFactor(0);
+    this.heroHpGfx = this.add.graphics().setScrollFactor(0);
+
     this.add.text(cam.width - 14, 14, '[ESC] Retreat', {
       fontSize: '16px', color: '#ff6666', fontFamily: 'monospace',
     }).setOrigin(1, 0).setScrollFactor(0);
 
-    this.add.text(cam.width - 14, 38, '← → Move  |  ↑ / Space Jump', {
+    this.add.text(cam.width - 14, 38, 'WASD / Arrows: Move & Jump', {
       fontSize: '15px', color: '#888888', fontFamily: 'monospace',
+    }).setOrigin(1, 0).setScrollFactor(0);
+
+    this.add.text(cam.width - 14, 58, `[Click] ${this.equippedWeapon.name}`, {
+      fontSize: '15px', color: '#ffddaa', fontFamily: 'monospace',
     }).setOrigin(1, 0).setScrollFactor(0);
   }
 
@@ -687,5 +926,15 @@ export class MissionScene extends Phaser.Scene {
       lines.push(`${id}: ${amt}`);
     }
     this.hudText.setText(`Collected: ${lines.length > 0 ? lines.join('  ') : '(none)'}`);
+
+    // Redraw HP bar
+    const pct = this.heroHp / this.heroMaxHp;
+    const barX = 40; const barY = 73; const barW = 140; const barH = 11;
+    this.heroHpGfx.clear();
+    this.heroHpGfx.fillStyle(0x440000, 0.85);
+    this.heroHpGfx.fillRect(barX, barY, barW, barH);
+    const hpColor = pct > 0.6 ? 0x44ee44 : pct > 0.3 ? 0xffaa00 : 0xff2200;
+    this.heroHpGfx.fillStyle(hpColor, 1);
+    this.heroHpGfx.fillRect(barX, barY, barW * pct, barH);
   }
 }
