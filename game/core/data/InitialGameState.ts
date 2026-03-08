@@ -63,6 +63,19 @@ function createStartingHeroes() {
 export function initializeGameState(gsm: IGameStateManager): void {
   // Generate the hex map (radius 5 → ~91 hexes for a richer neighbourhood view)
   const hexMap = generateHexMap(5);
+
+  // Seed a few air enemies (independent of tile siteType — can float above any hex)
+  const airEnemyCoords = [
+    { q: 2, r: -1 },
+    { q: -1, r: 2 },
+    { q: 1, r: 2 },
+    { q: -2, r: 1 },
+  ];
+  gsm.setAirEnemies(airEnemyCoords.map(coord => ({
+    hexId: hexId(coord),
+    dangerLevel: Math.max(1, Math.min(4, Math.round(hexDistance(coord, { q: 0, r: 0 }) * 1.5))),
+  })));
+
   gsm.setHexMap(hexMap);
 
   // City starts at center

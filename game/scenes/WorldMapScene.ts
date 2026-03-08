@@ -99,7 +99,7 @@ const SITE_DISPLAY: Record<string, { label: string; color: number }> = {
   ruin:    { label: 'Ruin',    color: 0xaa6633 },
   deposit: { label: 'Deposit', color: 0xcccc33 },
   skydock: { label: 'Dock',    color: 0xcc33cc },
-  empty:   { label: '',        color: 0x445566 },
+  empty:       { label: '',           color: 0x445566 },
 };
 
 const STATE_COLORS: Record<string, number> = {
@@ -127,6 +127,12 @@ function tilePts(cx: number, cy: number): Phaser.Geom.Point[] {
 interface ScreenHexLabel {
   coord: AxialCoord;
   text: Phaser.GameObjects.Text;
+}
+
+/** Marker for an air-mode enemy tile. Swap container contents to add sprites. */
+interface AirEnemyMarker {
+  tileId: string;
+  container: Phaser.GameObjects.Container;
 }
 
 export class WorldMapScene extends Phaser.Scene {
@@ -198,6 +204,10 @@ export class WorldMapScene extends Phaser.Scene {
   private titleText!:    Phaser.GameObjects.Text;
   private endCycleBtn!:  Phaser.GameObjects.Text;
   private zoomHintText!: Phaser.GameObjects.Text;
+  private modeToggleBtn!:    Phaser.GameObjects.Text;
+  private _interactionMode: 'ground' | 'air' = 'ground';
+  private _airModeContainer: Phaser.GameObjects.Container | null = null;
+  private _airEnemyMarkers: AirEnemyMarker[] = [];
 
   constructor() { super({ key: WORLD_MAP_SCENE_KEY }); }
 
@@ -237,6 +247,8 @@ export class WorldMapScene extends Phaser.Scene {
     this.routeOverlay    = null;
     this.modalContainer  = null;
     this.resultOverlay   = null;
+    this._airModeContainer = null;
+    this._airEnemyMarkers  = [];
   }
 
   create(): void {
@@ -280,6 +292,7 @@ export class WorldMapScene extends Phaser.Scene {
     this.gameTileContainer = this.add.container(0, 0);
     this.mapContainer.add(this.gameTileContainer);
     this._buildGameTiles();
+    this._buildAirOverlay();
     this._buildParticles();      // animated dots flowing along corridor spines
     this._updateLabelVisibility();
 
@@ -444,7 +457,11 @@ export class WorldMapScene extends Phaser.Scene {
           if (this.currentZoom < LABEL_ZOOM) return;
           if (this.isDragging) return;
           if (isCity) { this._openCityView(); }
-          else        { this._openPartySelection(tile); }
+          else if (this._interactionMode === 'air' && this.gsm.airEnemies.some(e => e.hexId === tile.id)) {
+            this._openAirCombatLaunch(tile);
+          } else {
+            this._openPartySelection(tile);
+          }
         });
       }
     }
@@ -1040,6 +1057,15 @@ export class WorldMapScene extends Phaser.Scene {
       'Cycle ' + this.gsm.cycleCount + '  —  Hex Map', {
         fontSize: '19px', color: '#c0d0e0', fontFamily: 'monospace', fontStyle: 'bold',
       }).setOrigin(0.5);
+
+    // Mode toggle button (top-left corner, inside title bar)
+    this.modeToggleBtn = this.add.text(14, 25, '[ GROUND ]', {
+        fontSize: '15px', color: '#44ffaa', fontFamily: 'monospace', fontStyle: 'bold',
+        backgroundColor: '#003322ee', padding: { x: 10, y: 5 },
+      }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+    this.modeToggleBtn.on('pointerover', () => this.modeToggleBtn.setAlpha(0.75));
+    this.modeToggleBtn.on('pointerout',  () => this.modeToggleBtn.setAlpha(1.0));
+    this.modeToggleBtn.on('pointerdown', () => this._toggleInteractionMode());
   }
 
   private _renderHintLine(W: number, H: number, hintH: number): void {
@@ -1224,6 +1250,74 @@ export class WorldMapScene extends Phaser.Scene {
     const uiScene = this.scene.get('UIScene');
     if (uiScene) (uiScene as unknown as { hide(): void }).hide();
     this.scene.start('CityViewScene', this.services);
+  }
+
+  private _buildAirOverlay(): void {
+    if (this._airModeContainer) { this._airModeContainer.destroy(); }
+    this._airEnemyMarkers = [];
+
+    const overlay = this.add.container(0, 0);
+    this.gameTileContainer.add(overlay);
+    this._airModeContainer = overlay;
+
+    // Grey wash drawn over all game tiles within the play area
+    const greyGfx = this.add.graphics();
+    overlay.add(greyGfx);
+    for (const tile of this.gsm.hexMap) {
+      if (hexDistance(tile.coord, this.gsm.cityHex) > GAME_RADIUS) continue;
+      const { x, y } = tilePx(tile.coord.q, tile.coord.r);
+      const pts = tilePts(x, y);
+      const dist = hexDistance(tile.coord, this.gsm.cityHex);
+      // Inner ring stays slightly lighter so reachable tiles remain distinct
+      greyGfx.fillStyle(0x2e2e2e, dist <= 2 ? 0.52 : 0.80);
+      greyGfx.fillPoints(pts, true);
+      greyGfx.lineStyle(1, 0x555555, 0.40);
+      greyGfx.strokePoints(pts, true);
+    }
+
+    // Enemy markers — one container per air enemy within game radius
+    for (const enemy of this.gsm.airEnemies) {
+      const tile = this.gsm.getHexById(enemy.hexId);
+      if (!tile || hexDistance(tile.coord, this.gsm.cityHex) > GAME_RADIUS) continue;
+      const { x, y } = tilePx(tile.coord.q, tile.coord.r);
+      const mc = this.add.container(x, y).setScale(0.5);
+      overlay.add(mc);
+      this._makeEnemyMarkerVisual(mc);
+      this._airEnemyMarkers.push({ tileId: enemy.hexId, container: mc });
+    }
+    overlay.setVisible(false);
+  }
+
+  /**
+   * Fills an enemy-marker container with placeholder art (red dot).
+   * To swap in a sprite: container.removeAll(true), then container.add(yourSprite).
+   */
+  private _makeEnemyMarkerVisual(container: Phaser.GameObjects.Container): void {
+    const gfx = this.add.graphics();
+    gfx.fillStyle(0xff2222, 0.28);  gfx.fillCircle(0, 0, 9);   // outer glow ring
+    gfx.fillStyle(0xff3333, 1.0);   gfx.fillCircle(0, 0, 5);   // main dot
+    gfx.fillStyle(0xffffff, 0.55);  gfx.fillCircle(-1.5, -1.5, 1.8); // highlight
+    container.add(gfx);
+    container.add(this.add.text(0, 8, 'enemy', {
+      fontSize: '4px', color: '#ff9999', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0));
+  }
+
+  private _toggleInteractionMode(): void {
+    this._interactionMode = this._interactionMode === 'ground' ? 'air' : 'ground';
+    const isAir = this._interactionMode === 'air';
+    this.modeToggleBtn
+      ?.setText(isAir ? '[ AIR ]' : '[ GROUND ]')
+      .setColor(isAir ? '#ff8844' : '#44ffaa')
+      .setBackgroundColor(isAir ? '#331100ee' : '#003322ee');
+    this._airModeContainer?.setVisible(isAir);
+  }
+
+  private _openAirCombatLaunch(tile: HexTile): void {
+    if (this.modalContainer) return;
+    const enemy = this.gsm.airEnemies.find(e => e.hexId === tile.id);
+    const dangerLevel = enemy?.dangerLevel ?? 1;
+    this.scene.start('AirCombatScene', { ...this.services, dangerLevel });
   }
 
   private _showMissionResult(): void {

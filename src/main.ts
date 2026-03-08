@@ -33,6 +33,7 @@ import { initializeGameState }     from '@data/InitialGameState';
 
 // ── Scene imports ─────────────────────────────────────────────
 import { WorldMapScene }  from '@scenes/WorldMapScene';
+import { AirCombatScene } from '@scenes/AirCombatScene';
 import { MissionScene }   from '@scenes/MissionScene';
 import { CityViewScene }  from '@scenes/CityViewScene';
 import { UIScene }        from '@scenes/UIScene';
@@ -110,6 +111,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [
     BootScene,     // runs first, starts the others
     WorldMapScene,
+    AirCombatScene,
     MissionScene,
     CityViewScene,
     UIScene,

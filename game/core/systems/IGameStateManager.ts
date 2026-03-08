@@ -73,6 +73,10 @@ export interface IGameStateManager {
   // --- Site history ---
   getSiteHistory(siteId: string): SiteVisitRecord[];
   appendSiteVisit(record: SiteVisitRecord): void;
+
+  // --- Air enemies (overlay, independent of tile siteType) ---
+  readonly airEnemies: Array<{ hexId: string; dangerLevel: number }>;
+  setAirEnemies(enemies: Array<{ hexId: string; dangerLevel: number }>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +103,7 @@ export class GameStateManagerStub implements IGameStateManager {
   missionResult: MissionResult | null = null;
   hexMap: HexTile[] = [];
   cityState: CityState = createDefaultCityState();
+  airEnemies: Array<{ hexId: string; dangerLevel: number }> = [];
   private _siteHistory: Map<string, SiteVisitRecord[]> = new Map();
 
   advanceCycle(): void { this.cycleCount++; }
@@ -125,6 +130,7 @@ export class GameStateManagerStub implements IGameStateManager {
     const idx = this.hexMap.findIndex(h => h.id === id);
     if (idx >= 0) Object.assign(this.hexMap[idx]!, updates);
   }
+setAirEnemies(enemies: Array<{ hexId: string; dangerLevel: number }>): void { this.airEnemies = enemies; }
   setCityState(state: CityState): void { this.cityState = state; }
   updateCityState(updates: Partial<CityState>): void { Object.assign(this.cityState, updates); }
   getSiteHistory(siteId: string): SiteVisitRecord[] { return this._siteHistory.get(siteId) ?? []; }

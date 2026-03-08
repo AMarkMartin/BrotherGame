@@ -28,7 +28,7 @@ export type SiteType =
   | 'ruin'      // Abandoned structure; exploration + loot
   | 'deposit'   // Natural resource deposit; extraction mission
   | 'skydock'   // Sky dock; trade with sky cities
-  | 'empty';    // No notable feature; auto Tier 1 yield only
+  | 'empty'       // No notable feature; auto Tier 1 yield only
 
 /**
  * Current lifecycle state of a surface site.
