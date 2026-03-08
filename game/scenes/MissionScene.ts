@@ -132,8 +132,13 @@ export class MissionScene extends Phaser.Scene {
       'animations/hound_walk_cycle.webp',
       { frameWidth: 213, frameHeight: 120 },
     );
+    this.load.spritesheet('spiderwalkcycle',
+      'animations/spiderwalkcycle.webp',
+      { frameWidth: 213, frameHeight: 120 },
+    );
     this.load.json('rootwalker_walk_cycle_meta', '_meta/rootwalker_walk_cycle.asset.json');
     this.load.json('hound_walk_cycle_meta', '_meta/hound_walk_cycle.asset.json');
+    this.load.json('spiderwalkcycle_meta', '_meta/spiderwalkcycle.asset.json');
   }
 
   create(): void {
@@ -166,6 +171,22 @@ export class MissionScene extends Phaser.Scene {
       this.anims.create({
         key: 'hound_idle',
         frames: [{ key: 'hound_walk_cycle', frame: 0 }],
+        frameRate: 1,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists('spider_walk')) {
+      this.anims.create({
+        key: 'spider_walk',
+        frames: this.anims.generateFrameNumbers('spiderwalkcycle', { start: 0, end: 35 }),
+        frameRate: 12,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists('spider_idle')) {
+      this.anims.create({
+        key: 'spider_idle',
+        frames: [{ key: 'spiderwalkcycle', frame: 0 }],
         frameRate: 1,
         repeat: -1,
       });
@@ -593,8 +614,9 @@ export class MissionScene extends Phaser.Scene {
   private _spawnEnemies(): void {
     const danger = this.context.dangerLevel;
     const gt = this._getGroundYInterp.bind(this);
-    const largeEnemyVisual = this._getEnemyVisualConfig('rootwalker_walk_cycle_meta');
+    const largeEnemyVisual  = this._getEnemyVisualConfig('rootwalker_walk_cycle_meta');
     const mediumEnemyVisual = this._getEnemyVisualConfig('hound_walk_cycle_meta');
+    const smallEnemyVisual  = this._getEnemyVisualConfig('spiderwalkcycle_meta');
 
     // Scale counts with danger level (1–5)
     const smallCount  = Math.min(danger + 1, 5);
@@ -616,7 +638,7 @@ export class MissionScene extends Phaser.Scene {
       slot++;
     };
 
-    for (let i = 0; i < smallCount;  i++) place(SmallEnemy);
+    for (let i = 0; i < smallCount;  i++) place(SmallEnemy, smallEnemyVisual);
     for (let i = 0; i < mediumCount; i++) place(MediumEnemy, mediumEnemyVisual);
     for (let i = 0; i < largeCount;  i++) place(LargeEnemy, largeEnemyVisual);
   }

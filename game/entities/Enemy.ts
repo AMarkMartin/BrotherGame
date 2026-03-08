@@ -406,34 +406,26 @@ export class SmallEnemy extends Enemy {
       ? { attackType: 'dash'   as const, detectionRange: 220, telegraphDuration: 520, attackDuration: 320, attackCooldown: 2200, attackDamage: 1 }
       : { attackType: 'ranged' as const, detectionRange: 300, telegraphDuration: 420, attackDuration: 100, attackCooldown: 1800, attackDamage: 1 };
     super(scene, config, getGroundY, {
-      textureKey: 'enemy_small',
+      textureKey: 'spiderwalkcycle',
       maxHp: 2, moveSpeed: 90, spriteW: 28, spriteH: 36, bodyW: 18, bodyH: 30,
       ...attackStats,
     });
+
+    this.sprite.play('spider_idle');
   }
 
-  protected _drawSprite(gfx: Phaser.GameObjects.Graphics, cx: number, bottom: number): void {
-    // Legs
-    gfx.fillStyle(0xcc3311, 1);
-    gfx.fillRect(cx - 7, bottom - 9, 5, 9);
-    gfx.fillRect(cx + 2,  bottom - 9, 5, 9);
-    // Body
-    gfx.fillStyle(0xff5533, 1);
-    gfx.fillRoundedRect(cx - 9, bottom - 27, 18, 20, 3);
-    // Head
-    gfx.fillStyle(0xee4422, 1);
-    gfx.fillCircle(cx, bottom - 30, 9);
-    // Eyes
-    gfx.fillStyle(0xffff00, 1);
-    gfx.fillCircle(cx - 3, bottom - 32, 2);
-    gfx.fillCircle(cx + 3, bottom - 32, 2);
-    gfx.fillStyle(0x222200, 1);
-    gfx.fillCircle(cx - 3, bottom - 32, 1);
-    gfx.fillCircle(cx + 3, bottom - 32, 1);
-    // Outline
-    gfx.lineStyle(1, 0x221100, 0.7);
-    gfx.strokeCircle(cx, bottom - 30, 9);
-    gfx.strokeRoundedRect(cx - 9, bottom - 27, 18, 20, 3);
+  /** No-op: the spritesheet replaces the procedural placeholder. */
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  protected _drawSprite(_gfx: Phaser.GameObjects.Graphics, _cx: number, _bottom: number): void {}
+
+  override update(heroX: number, heroY: number): void {
+    super.update(heroX, heroY);
+    const velX = this.sprite.body!.velocity.x;
+    if (velX !== 0) {
+      this.sprite.play('spider_walk', true);
+    } else {
+      this.sprite.play('spider_idle', true);
+    }
   }
 }
 
