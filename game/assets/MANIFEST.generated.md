@@ -4,6 +4,8 @@
 
 | ID | Description | Path | Size | Format | Status |
 |---|---|---|---|---|---|
+| `city_close_view_basic` | backgrounds asset | `backgrounds/city_close_view_basic.webp` | 2752×1536 | webp | generated |
+| `cityzoom` | sprites asset | `sprites/cityzoom.webp` | 409×487 | webp | generated |
 | `hero1_walk_cycle` | Generated from video (walk) | `animations/hero1_walk_cycle.webp` | 6×6 cells, 160×90 display | webp spritesheet | generated |
 | `hero1attack` | Generated from video (walk) | `animations/hero1attack.webp` | 6×6 cells, 249×140 display | webp spritesheet | generated |
 | `hound_walk_cycle` | walk animation sheet | `animations/hound_walk_cycle.webp` | 6×6 cells, 195×110 display | webp spritesheet | generated |

@@ -183,7 +183,7 @@ export class WorldMapScene extends Phaser.Scene {
   /** Junction selection panel. */
   private _junctionOverlay: Phaser.GameObjects.Container | null = null;
   private cityDot: Phaser.GameObjects.Graphics | null = null;
-  /** Zoomed-in city sprite (CityZoom.png), bobbing gently. Hidden when zoomed out. */
+  /** Zoomed-in city sprite (cityzoom.webp), bobbing gently. Hidden when zoomed out. */
   private _citySprite:   Phaser.GameObjects.Image | null = null;
   private _cityBobBaseY: number = 0;
   /** True while the city movement tween is playing — blocks new End Cycle clicks. */
@@ -262,7 +262,7 @@ export class WorldMapScene extends Phaser.Scene {
 
   preload(): void {
     if (!this.textures.exists('city_zoom')) {
-      this.load.image('city_zoom', 'sprites/CityZoom.png');
+      this.load.image('city_zoom', 'sprites/cityzoom.webp');
     }
   }
 
