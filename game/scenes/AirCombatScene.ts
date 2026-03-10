@@ -21,6 +21,8 @@ export const AIR_COMBAT_SCENE_KEY = 'AirCombatScene';
 
 // -- World ------------------------------------------------------------------
 const WORLD_W = 1920, WORLD_H = 1080;
+const AIR_BACKGROUND_TEXTURE_KEY = 'air_battle_background';
+const PLAYER_CITY_TEXTURE_KEY = 'air_player_city';
 const PLAYER_BASE_X = 160, ENEMY_BASE_X = WORLD_W - 160;
 const BASE_Y = WORLD_H / 2, BASE_W = 80, BASE_H = 130, BASE_HP = 800;
 
@@ -74,6 +76,7 @@ export class AirCombatScene extends Phaser.Scene {
   private dangerLevel  = 1;
 
   private gfx!: Phaser.GameObjects.Graphics;
+  private playerBaseSprite: Phaser.GameObjects.Image | null = null;
   private hudText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private unitNameTexts: Map<string, Phaser.GameObjects.Text> = new Map();
@@ -95,6 +98,15 @@ export class AirCombatScene extends Phaser.Scene {
     this.dangerLevel = data.dangerLevel ?? 1;
   }
 
+  preload(): void {
+    if (!this.textures.exists(AIR_BACKGROUND_TEXTURE_KEY)) {
+      this.load.image(AIR_BACKGROUND_TEXTURE_KEY, 'backgrounds/battlebackground01.webp');
+    }
+    if (!this.textures.exists(PLAYER_CITY_TEXTURE_KEY)) {
+      this.load.image(PLAYER_CITY_TEXTURE_KEY, 'sprites/battlecity01.webp');
+    }
+  }
+
   create(): void {
     this.combatDone    = false;
     this.playerBaseHp  = BASE_HP;
@@ -110,6 +122,9 @@ export class AirCombatScene extends Phaser.Scene {
     this.unitNameTexts.clear();
 
     this._drawStaticBackground();
+    this.playerBaseSprite = this.add.image(PLAYER_BASE_X, BASE_Y + 8, PLAYER_CITY_TEXTURE_KEY)
+      .setDisplaySize(440, 240)
+      .setDepth(0.0);
     this.gfx = this.add.graphics();
     this._spawnPlayerUnits();
     this._spawnEnemyUnits();
@@ -432,7 +447,7 @@ export class AirCombatScene extends Phaser.Scene {
       this._renderBoxRect(this.dragStart.x, this.dragStart.y, ptr.x, ptr.y);
     }
     this._renderEchos(time);
-    this._drawBase(PLAYER_BASE_X, BASE_Y, this.playerBaseHp, 0x2288ff);
+    this._drawPlayerBaseStatus();
     this._drawBase(ENEMY_BASE_X,  BASE_Y, this.enemyBaseHp,  0xff3333);
     for (const unit of this.units) {
       const flashing  = (time - unit.hitFlashMs) < 150;
@@ -486,6 +501,14 @@ export class AirCombatScene extends Phaser.Scene {
     this.gfx.lineStyle(2, 0xffffff, 0.5);
     this.gfx.strokeRect(x - BASE_W / 2, y - BASE_H / 2, BASE_W, BASE_H);
     this._drawHPBar(x, y + BASE_H / 2 + 8, hp, BASE_HP, BASE_W);
+  }
+
+  private _drawPlayerBaseStatus(): void {
+    const barWidth = Math.max(this.playerBaseSprite?.displayWidth ?? BASE_W, BASE_W);
+    const barY = this.playerBaseSprite
+      ? this.playerBaseSprite.y + this.playerBaseSprite.displayHeight / 2 + 8
+      : BASE_Y + BASE_H / 2 + 8;
+    this._drawHPBar(PLAYER_BASE_X, barY, this.playerBaseHp, BASE_HP, barWidth);
   }
 
   private _drawHPBar(cx: number, y: number, hp: number, maxHp: number, w: number): void {
@@ -589,17 +612,13 @@ export class AirCombatScene extends Phaser.Scene {
   // -- Background ----------------------------------------------------------
 
   private _drawStaticBackground(): void {
-    const bg = this.add.graphics();
-    bg.fillGradientStyle(0x1a2a5a, 0x1a2a5a, 0x0d1a3a, 0x0d1a3a, 1);
-    bg.fillRect(0, 0, WORLD_W, WORLD_H);
-    bg.fillStyle(0x2a3a6a, 0.4);
-    for (let i = 0; i < 8; i++)
-      bg.fillEllipse(this._prng(i*7+3)*WORLD_W, this._prng(i*13)*(WORLD_H-100)+50,
-        this._prng(i*17+1)*400+200, this._prng(i*11+2)*40+20);
-    bg.fillStyle(0x3a4a7a, 0.2);
-    for (let i = 0; i < 12; i++)
-      bg.fillEllipse(this._prng(i*41+8)*WORLD_W, this._prng(i*19+5)*(WORLD_H-60)+30,
-        this._prng(i*23+6)*300+100, this._prng(i*31+7)*30+10);
+    this.add.image(WORLD_W / 2, WORLD_H / 2, AIR_BACKGROUND_TEXTURE_KEY)
+      .setDisplaySize(WORLD_W, WORLD_H)
+      .setDepth(-10);
+
+    const overlay = this.add.graphics().setDepth(-9);
+    overlay.fillStyle(0x081018, 0.18);
+    overlay.fillRect(0, 0, WORLD_W, WORLD_H);
   }
 
   // -- Utilities -----------------------------------------------------------

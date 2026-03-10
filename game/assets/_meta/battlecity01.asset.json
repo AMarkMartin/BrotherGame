@@ -1,0 +1,37 @@
+{
+  "id": "battlecity01",
+  "name": "Battle City 01",
+  "status": "active",
+  "category": "sprites",
+  "mode": "image",
+  "outputFormat": "webp",
+  "maintainAspectRatio": true,
+  "resizeFit": "contain",
+  "outputRelativePath": "game/assets/sprites/battlecity01.webp",
+  "outputAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\sprites\\battlecity01.webp",
+  "metadataAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\_meta\\battlecity01.asset.json",
+  "metadataRelativePath": "game/assets/_meta/battlecity01.asset.json",
+  "exportSize": {
+    "width": 2760,
+    "height": 1504
+  },
+  "displaySize": {
+    "width": 642,
+    "height": 350
+  },
+  "optimization": {
+    "enabled": true,
+    "backgroundRemovalRequested": true,
+    "notes": [
+      "Local matte background removal applied using corner-color sampling."
+    ]
+  },
+  "source": {
+    "kind": "image",
+    "name": "Gemini_Generated_Image_ppojyyppojyyppoj.png",
+    "mimeType": "image/png",
+    "sizeBytes": 7185197
+  },
+  "generatedAt": "2026-03-10T05:52:16.578Z",
+  "notes": ""
+}

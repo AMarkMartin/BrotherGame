@@ -4,6 +4,8 @@
 
 | ID | Description | Path | Size | Format | Status |
 |---|---|---|---|---|---|
+| `battlebackground01` | backgrounds asset | `backgrounds/battlebackground01.webp` | 2760×1504 | webp | generated |
+| `battlecity01` | sprites asset | `sprites/battlecity01.webp` | 2760×1504 | webp | generated |
 | `hero1_walk_cycle` | Generated from video (walk) | `animations/hero1_walk_cycle.webp` | 6×6 cells, 160×90 display | webp spritesheet | generated |
 | `hero1attack` | Generated from video (walk) | `animations/hero1attack.webp` | 6×6 cells, 249×140 display | webp spritesheet | generated |
 | `hound_walk_cycle` | walk animation sheet | `animations/hound_walk_cycle.webp` | 6×6 cells, 195×110 display | webp spritesheet | generated |
