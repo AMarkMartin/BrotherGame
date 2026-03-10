@@ -92,6 +92,22 @@ function worldTileColor(q: number, r: number): number {
   return e > 0.56 ? 0xb86820 : 0xe0b85a;                // desert / golden dunes
 }
 
+/** Lighten a packed 0xRRGGBB colour by adding `amount` to each channel. */
+function lightenColor(col: number, amount: number): number {
+  const r = Math.min(255, ((col >> 16) & 0xff) + amount);
+  const g = Math.min(255, ((col >>  8) & 0xff) + amount);
+  const b = Math.min(255, ( col        & 0xff) + amount);
+  return (r << 16) | (g << 8) | b;
+}
+
+/** Darken a packed 0xRRGGBB colour by subtracting `amount` from each channel. */
+function darkenColor(col: number, amount: number): number {
+  const r = Math.max(0, ((col >> 16) & 0xff) - amount);
+  const g = Math.max(0, ((col >>  8) & 0xff) - amount);
+  const b = Math.max(0, ( col        & 0xff) - amount);
+  return (r << 16) | (g << 8) | b;
+}
+
 
 const SITE_DISPLAY: Record<string, { label: string; color: number }> = {
   town:    { label: 'Town',    color: 0x3388dd },
@@ -147,6 +163,21 @@ export class WorldMapScene extends Phaser.Scene {
   private _networkGfx:    Phaser.GameObjects.Graphics | null = null;
   /** Reference to the world terrain graphics layer (for zoom-based alpha). */
   private _terrainGfx:    Phaser.GameObjects.Graphics | null = null;
+  /** Hex grid stroke layer — separate from fills so it can fade at far zoom. */
+  private _terrainLineGfx:   Phaser.GameObjects.Graphics | null = null;
+  /** Bevel shading layer — highlight/shadow tints reveal 3-D form at close zoom. */
+  private _terrainDetailGfx: Phaser.GameObjects.Graphics | null = null;
+  /** Cloud puff container inside mapContainer — drifts across the world. */
+  private _cloudContainer:   Phaser.GameObjects.Container | null = null;
+  /** Per-cloud drift data for update(). */
+  private _cloudData: Array<{
+    gfx: Phaser.GameObjects.Graphics;
+    vx: number; vy: number; wrapHalfW: number; wrapHalfH: number;
+  }> = [];
+  /** Full-screen aerial haze overlay at scene level (not in mapContainer). */
+  private _hazeGfx:     Phaser.GameObjects.Graphics | null = null;
+  /** Full-screen lens vignette at scene level. */
+  private _vignetteGfx: Phaser.GameObjects.Graphics | null = null;
   /** Permanent outline ring drawn at the edge of the reachable hex area. */
   private _reachOutlineGfx: Phaser.GameObjects.Graphics | null = null;
   /** Terrain fill graphics for each game tile — hidden when zoomed far out. */
@@ -238,6 +269,12 @@ export class WorldMapScene extends Phaser.Scene {
     this.screenLabels    = [];
     this._networkGfx         = null;
     this._terrainGfx          = null;
+    this._terrainLineGfx      = null;
+    this._terrainDetailGfx    = null;
+    this._cloudContainer      = null;
+    this._cloudData            = [];
+    this._hazeGfx              = null;
+    this._vignetteGfx          = null;
     this._reachOutlineGfx     = null;
     this._streamGfx           = null;
     this._particleData        = [];
@@ -303,6 +340,7 @@ export class WorldMapScene extends Phaser.Scene {
     this._buildWorldBackground();
     this._buildFogOverlay();         // distance-based dark veil between terrain and corridors
     this._renderWindNetwork();       // persistent corridor bands + spines + junction markers
+    this._buildClouds();             // animated cloud layer (above corridors, below city)
 
     this.gameTileContainer = this.add.container(0, 0);
     this.mapContainer.add(this.gameTileContainer);
@@ -338,6 +376,7 @@ export class WorldMapScene extends Phaser.Scene {
       }
     });
 
+    this._buildHaze(W, H);           // scene-level aerial haze + vignette
     this._renderHintLine(W, H, HINT_H);
     this._renderEndCycleButton(W, H);
 
@@ -377,20 +416,52 @@ export class WorldMapScene extends Phaser.Scene {
   }
 
   private _buildWorldBackground(): void {
-    const gfx = this.add.graphics();
-    this._terrainGfx = gfx;
-    this.mapContainer.add(gfx);
+    // Three separate Graphics for independent alpha control:
+    //   fillGfx — terrain colour fills     (always visible, fades with zoom)
+    //   bevlGfx — per-hex bevel shading    (fades in at close zoom)
+    //   lineGfx — hex grid strokes         (fades out at far zoom)
+    const fillGfx = this.add.graphics();
+    const bevlGfx = this.add.graphics();
+    const lineGfx = this.add.graphics();
+    this._terrainGfx       = fillGfx;
+    this._terrainDetailGfx = bevlGfx;
+    this._terrainLineGfx   = lineGfx;
+    // Insertion order sets draw order within mapContainer:
+    // fill(0) → bevel(1) → lines(2)  — fog inserted after these by _buildFogOverlay
+    this.mapContainer.add(fillGfx);
+    this.mapContainer.add(bevlGfx);
+    this.mapContainer.add(lineGfx);
+
     for (let q = -WORLD_RADIUS; q <= WORLD_RADIUS; q++) {
       for (let r = -WORLD_RADIUS; r <= WORLD_RADIUS; r++) {
         if (Math.abs(-q - r) > WORLD_RADIUS) continue;
         const { x, y } = tilePx(q, r);
-        const pts = tilePts(x, y);
-        gfx.fillStyle(worldTileColor(q, r), 0.80);
-        gfx.fillPoints(pts, true);
-        gfx.lineStyle(1, 0x000000, 0.30);
-        gfx.strokePoints(pts, true);
+        const pts       = tilePts(x, y);
+        const col       = worldTileColor(q, r);
+
+        // ── Terrain fill ────────────────────────────────────────────────
+        fillGfx.fillStyle(col, 0.80);
+        fillGfx.fillPoints(pts, true);
+
+        // ── Bevel: highlight upper-left faces, shadow lower-right faces ──
+        // Flat-top hex vertex angles: v0=0°, v1=60°, v2=120°, v3=180°, v4=240°, v5=300°
+        // Upper-left highlight → triangles: centre–v4–v5, centre–v5–v0
+        // Lower-right shadow   → triangles: centre–v1–v2, centre–v2–v3
+        bevlGfx.fillStyle(lightenColor(col, 45), 0.22);
+        bevlGfx.fillTriangle(x, y, pts[4]!.x, pts[4]!.y, pts[5]!.x, pts[5]!.y);
+        bevlGfx.fillTriangle(x, y, pts[5]!.x, pts[5]!.y, pts[0]!.x, pts[0]!.y);
+        bevlGfx.fillStyle(darkenColor(col, 55), 0.22);
+        bevlGfx.fillTriangle(x, y, pts[1]!.x, pts[1]!.y, pts[2]!.x, pts[2]!.y);
+        bevlGfx.fillTriangle(x, y, pts[2]!.x, pts[2]!.y, pts[3]!.x, pts[3]!.y);
+
+        // ── Grid stroke ─────────────────────────────────────────────────
+        lineGfx.lineStyle(1, 0x000000, 0.30);
+        lineGfx.strokePoints(pts, true);
       }
     }
+    // Start invisible; update() drives them based on zoom level
+    bevlGfx.setAlpha(0);
+    lineGfx.setAlpha(0);
   }
 
   private _drawReachOutline(gfx: Phaser.GameObjects.Graphics, center: AxialCoord): void {
@@ -613,10 +684,7 @@ export class WorldMapScene extends Phaser.Scene {
     }
     // Clear corridor hover highlight once we're mostly zoomed in.
     if (show) this._onCorridorOut();
-    // Terrain fades to near-invisible when zoomed far out; particles take over.
-    const zoomT = Phaser.Math.Clamp(
-      (this.currentZoom - MIN_ZOOM) / (INITIAL_ZOOM - MIN_ZOOM), 0, 1);
-    if (this._terrainGfx) this._terrainGfx.setAlpha(0.20 + zoomT * 0.60);
+    // Terrain / line / bevel / cloud / haze alphas are all driven in update() each frame.
   }
 
   private _updateScreenLabelTransforms(): void {
@@ -822,6 +890,38 @@ export class WorldMapScene extends Phaser.Scene {
     if (this._citySprite && this._citySprite.alpha > 0 && !this._cityMoving) {
       this._citySprite.y = this._cityBobBaseY + Math.sin(time * 0.0005) * TILE_R * 0.12;
     }
+
+    // ── Zoom-driven visual effect alphas ─────────────────────────────────────
+    // zoomFar:  1 at MIN_ZOOM → 0 at INITIAL_ZOOM  ("strategic / world view")
+    // zoomNear: 0 at INITIAL_ZOOM → 1 at MAX_ZOOM  ("close / aerial view")
+    const zoomFar  = Phaser.Math.Clamp((this.currentZoom - MIN_ZOOM)     / (INITIAL_ZOOM - MIN_ZOOM),  0, 1);
+    const zoomNear = Phaser.Math.Clamp((this.currentZoom - INITIAL_ZOOM) / (MAX_ZOOM - INITIAL_ZOOM),  0, 1);
+    /** Smoothstep: smooth S-curve 0→1 as t moves from lo to hi. */
+    const ss = (t: number, lo: number, hi: number): number => {
+      const x = Phaser.Math.Clamp((t - lo) / (hi - lo), 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+
+    // Terrain fills — present at all zoom levels, brighten toward INITIAL_ZOOM
+    if (this._terrainGfx)       this._terrainGfx.setAlpha(0.20 + zoomFar * 0.60);
+    // Grid lines — fade OUT as we zoom far away; hexes blend into terrain patches
+    if (this._terrainLineGfx)   this._terrainLineGfx.setAlpha(ss(zoomFar, 0.30, 0.85));
+    // Bevel shading — fade IN as we zoom close; 3-D form emerges
+    if (this._terrainDetailGfx) this._terrainDetailGfx.setAlpha(ss(zoomNear, 0.08, 0.45));
+    // Clouds — begin fading in immediately as zoom passes INITIAL_ZOOM
+    if (this._cloudContainer)   this._cloudContainer.setAlpha(ss(zoomNear, 0.0, 0.16));
+    // Drift each cloud puff across the map (mapContainer-local px per ms)
+    for (const cd of this._cloudData) {
+      cd.gfx.x += cd.vx * delta;
+      cd.gfx.y += cd.vy * delta;
+      if (cd.gfx.x >  cd.wrapHalfW) cd.gfx.x -= cd.wrapHalfW * 2;
+      if (cd.gfx.x < -cd.wrapHalfW) cd.gfx.x += cd.wrapHalfW * 2;
+      if (cd.gfx.y >  cd.wrapHalfH) cd.gfx.y -= cd.wrapHalfH * 2;
+      if (cd.gfx.y < -cd.wrapHalfH) cd.gfx.y += cd.wrapHalfH * 2;
+    }
+    // Aerial haze (pale blue tint) and vignette: deepen at close zoom
+    if (this._hazeGfx)     this._hazeGfx.setAlpha(ss(zoomNear, 0.10, 0.55) * 0.10);
+    if (this._vignetteGfx) this._vignetteGfx.setAlpha(ss(zoomNear, 0.04, 0.38) * 0.85);
 
     gfx.clear();
 
@@ -1432,9 +1532,147 @@ export class WorldMapScene extends Phaser.Scene {
       }
     }
 
-    // Always sits at z-index 1 — above terrain (0), below corridor network (2+)
-    this.mapContainer.addAt(gfx, 1);
+    // Insert fog right after the terrain lines layer (fill/bevel/lines trio),
+    // so draw order is: fill → bevel → lines → fog → network+
+    const fogIdx = this._terrainLineGfx
+      ? this.mapContainer.getIndex(this._terrainLineGfx) + 1
+      : 3;
+    this.mapContainer.addAt(gfx, fogIdx);
     this._fogGfx = gfx;
+  }
+
+  /**
+   * Build the animated cloud layer.
+   *
+   * Creates ~26 procedural cloud puffs (overlapping soft white circles) across
+   * the world disk, split into two parallax layers — near (bigger, faster) and
+   * far (smaller, slower).  Each puff drifts slowly in a near-horizontal wind
+   * direction and wraps around the world bounds.
+   *
+   * The container sits in mapContainer between the corridor network and the
+   * gameTileContainer, so clouds appear below the floating city.
+   * Alpha is driven every frame in update() by zoomNear.
+   */
+  private _buildClouds(): void {
+    this._cloudContainer?.destroy();
+    this._cloudContainer = null;
+    this._cloudData = [];
+
+    const container = this.add.container(0, 0);
+    container.setAlpha(0);   // update() drives this
+    this.mapContainer.add(container);
+    this._cloudContainer = container;
+
+    /** Half-extent of the world in mapContainer px for wrap-around logic. */
+    const WORLD_PX = WORLD_RADIUS * TILE_R * 1.5;
+
+    // Near layer: larger, faster-drifting puffs (lower altitude)
+    // Far  layer: smaller, slower puffs (higher altitude / distant)
+    const layers = [
+      { count: 18, baseW: 80, baseH: 22, speedScale: 1.0,  baseAlpha: 0.62 },
+      { count: 16, baseW: 44, baseH: 12, speedScale: 0.42, baseAlpha: 0.44 },
+    ];
+
+    for (const layer of layers) {
+      for (let i = 0; i < layer.count; i++) {
+        // Scatter puff randomly inside the world disk
+        const ang  = Math.random() * Math.PI * 2;
+        const dist = Math.random() * WORLD_PX * 0.88;
+        const bx   = Math.cos(ang) * dist;
+        const by   = Math.sin(ang) * dist;
+
+        // Per-puff width/height variation
+        const wScale = 0.7 + Math.random() * 0.8;
+        const pw     = layer.baseW * wScale;
+        const ph     = layer.baseH * (0.8 + Math.random() * 0.5);
+
+        const puffGfx = this.add.graphics();
+        puffGfx.x = bx;
+        puffGfx.y = by;
+
+        // ── flat shadow underbelly ─────────────────────────────────────────
+        puffGfx.fillStyle(0xd0e4f0, 0.08 * layer.baseAlpha);
+        puffGfx.fillEllipse(0, ph * 0.25, pw * 2.2, ph * 0.8);
+
+        // ── wide flat body ───────────────────────────────────────────────
+        puffGfx.fillStyle(0xffffff, 0.13 * layer.baseAlpha);
+        puffGfx.fillEllipse(0, 0, pw * 2.0, ph * 1.0);
+
+        // ── billowy dome bumps along horizontal spine ────────────────────
+        const numBumps = 3 + Math.floor(Math.random() * 3);
+        for (let b = 0; b < numBumps; b++) {
+          const bx2  = (b / (numBumps - 1) - 0.5) * pw * 1.3;
+          const bw   = pw * (0.30 + Math.random() * 0.35);
+          // Height capped to 55% of the bump width so bumps stay horizontally flat
+          const bh   = Math.min(ph * (0.8 + Math.random() * 0.6), bw * 0.55);
+          const ba   = (0.10 + Math.random() * 0.14) * layer.baseAlpha;
+          puffGfx.fillStyle(0xffffff, ba);
+          puffGfx.fillEllipse(bx2, -ph * 0.2, bw * 2, bh * 2);
+        }
+
+        // ── bright core highlight ──────────────────────────────────────────
+        puffGfx.fillStyle(0xffffff, 0.16 * layer.baseAlpha);
+        puffGfx.fillEllipse(0, -ph * 0.1, pw * 0.9, ph * 0.7);
+
+        container.add(puffGfx);
+
+        // Slow wind drift, mostly horizontal with a small vertical component
+        const windAng = -0.18 + Math.random() * 0.36;
+        const speed   = (0.55 + Math.random() * 0.75) * layer.speedScale; // px/s world-space
+        this._cloudData.push({
+          gfx: puffGfx,
+          vx:  Math.cos(windAng) * speed / 1000,  // px/ms
+          vy:  Math.sin(windAng) * speed / 1000,
+          wrapHalfW: WORLD_PX * 0.97,
+          wrapHalfH: WORLD_PX * 0.97,
+        });
+      }
+    }
+  }
+
+  /**
+   * Build the scene-level aerial haze and vignette overlays.
+   *
+   * These are NOT inside mapContainer, so they scale with the viewport (not the map).
+   * - hazeGfx:     pale blue-white fill that tints the scene at close zoom,
+   *                conveying thick atmosphere when looking straight down.
+   * - vignetteGfx: dark edge-banding that creates a lens/porthole depth effect.
+   *
+   * Both start at alpha 0 and are driven in update() by zoomNear.
+   */
+  private _buildHaze(W: number, H: number): void {
+    // ── Haze (pale blue-white atmosphere tint) ───────────────────────────────
+    const hazeGfx = this.add.graphics();
+    hazeGfx.fillStyle(0xb0cce0, 1.0);
+    hazeGfx.fillRect(0, 0, W, H);
+    hazeGfx.setAlpha(0);
+    hazeGfx.setDepth(3);
+    this._hazeGfx = hazeGfx;
+
+    // ── Vignette (atmospheric edge darkening) ────────────────────────────────
+    // Simulate looking through a vast column of air out to the world below.
+    // Horizontal and vertical gradient bands accumulate at the four edges.
+    const vigGfx = this.add.graphics();
+    const N      = 24;
+    // Horizontal bands (top/bottom darkening)
+    for (let i = 0; i < N; i++) {
+      const tFrac = i / N;
+      const edgeT = Math.abs(tFrac - 0.5) * 2;           // 0 at centre, 1 at top/bottom
+      const a     = Math.pow(edgeT, 2.5) * 0.22 / N * 4;
+      vigGfx.fillStyle(0x000814, a);
+      vigGfx.fillRect(0, tFrac * H, W, H / N + 1);
+    }
+    // Vertical bands (left/right darkening, slightly weaker)
+    for (let i = 0; i < N; i++) {
+      const tFrac = i / N;
+      const edgeT = Math.abs(tFrac - 0.5) * 2;
+      const a     = Math.pow(edgeT, 2.5) * 0.14 / N * 4;
+      vigGfx.fillStyle(0x000814, a);
+      vigGfx.fillRect(tFrac * W, 0, W / N + 1, H);
+    }
+    vigGfx.setAlpha(0);
+    vigGfx.setDepth(3);
+    this._vignetteGfx = vigGfx;
   }
 
   private _renderHintLine(W: number, H: number, hintH: number): void {
