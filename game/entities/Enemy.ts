@@ -5,6 +5,7 @@
  *
  * Attack types:
  *   'dash'   — telegraphs with an orange arrow, then lunges at the player
+ *   'leap'   — telegraphs with a green arc indicator, then jumps toward the player
  *   'ranged' — telegraphs with a purple expanding ring, then fires a projectile
  *   'none'   — patrol only
  *
@@ -49,7 +50,7 @@ export interface EnemyStats {
   bodyW:             number;
   bodyH:             number;
   // ── Attack ────────────────────────────────────────────
-  attackType:        'dash' | 'ranged' | 'none';
+  attackType:        'dash' | 'leap' | 'ranged' | 'none';
   /** Horizontal distance (px) that triggers the attack sequence. */
   detectionRange:    number;
   /** How long the telegraph lasts (ms) — player's window to dodge. */
@@ -106,6 +107,7 @@ export abstract class Enemy {
   private attackDir: 1 | -1 = 1;
   private telegraphGfx: Phaser.GameObjects.Graphics | null = null;
   private telegraphStartTime = 0;
+  private leapStartTime = 0;
 
   /** Set when this enemy fires a ranged shot. The host scene reads and clears it. */
   public pendingProjectile: PendingProjectile | null = null;
@@ -187,11 +189,15 @@ export abstract class Enemy {
     // Stricter re-ground: during an active dash the enemy must physically be AT or BELOW
     // the terrain surface (no 1 px margin) so they can't skip over valleys.
     const isActiveDash = !inKnockback && this.attackState === 'attacking' && this.stats.attackType === 'dash';
+    const isLeaping    = !inKnockback && this.attackState === 'attacking' && this.stats.attackType === 'leap';
     const regroundFloor = isActiveDash ? groundedSpriteY : groundedSpriteY - 1;
     if (!this.isGrounded && body.velocity.y >= 0 && this.sprite.y >= regroundFloor) {
       this.isGrounded = true;
     }
-    if (!inKnockback && this.isGrounded && (body.velocity.y < -50 || this.sprite.y < groundedSpriteY - 4)) {
+    // Skip the un-grounding check during a leap: the visual arc shifts sprite.y above
+    // groundedSpriteY each frame, which would otherwise falsely un-ground the enemy and
+    // prevent the terrain pin from resetting sprite.y — causing the arc to accumulate.
+    if (!inKnockback && !isLeaping && this.isGrounded && (body.velocity.y < -50 || this.sprite.y < groundedSpriteY - 4)) {
       this.isGrounded = false;
     }
     // Enemies have no platform colliders, so the only thing that can set body.blocked.down
@@ -221,6 +227,13 @@ export abstract class Enemy {
         // Parabola: 0 at t=0 and t=1, most negative (upward in screen-Y) at t=0.5
         this.sprite.y += 4 * ARC_HEIGHT * t * (t - 1); // negative = upward
       }
+    }
+
+    // Leap attack: parabolic visual arc. Body stays pinned to terrain so slope
+    // following keeps working; only sprite.y is offset, matching how knockback works.
+    if (this.attackState === 'attacking' && this.stats.attackType === 'leap') {
+      const t = Math.min(1, (this.scene.time.now - this.leapStartTime) / this.stats.attackDuration);
+      this.sprite.y -= 80 * 4 * t * (1 - t); // 80 px peak height, returns to 0 at t=1
     }
 
     // inKnockback is already computed above
@@ -283,7 +296,7 @@ export abstract class Enemy {
           this.attackState      = 'cooldown';
           this.attackStateUntil = now + this.stats.attackCooldown;
         }
-        // Dash: velocity set in _executeAttack continues naturally
+        // Dash/leap: velocity set in _executeAttack continues naturally
         break;
 
       case 'cooldown':
@@ -300,7 +313,10 @@ export abstract class Enemy {
 
   private _showTelegraph(): void {
     this.telegraphGfx = this.scene.add.graphics();
-    this.sprite.setTint(this.stats.attackType === 'dash' ? 0xff7700 : 0xaa44ff);
+    const tint = this.stats.attackType === 'dash' ? 0xff7700
+               : this.stats.attackType === 'leap' ? 0x88ff00
+               : 0xaa44ff;
+    this.sprite.setTint(tint);
   }
 
   private _clearTelegraph(): void {
@@ -337,6 +353,15 @@ export abstract class Enemy {
         arrowBaseX, sy - 9,
         arrowBaseX, sy + 9,
       );
+    } else if (this.stats.attackType === 'leap') {
+      // Landing-zone shadow: a faint ellipse on the ground where the enemy will land.
+      // Estimated from launch velocity (vX=380, arc≈0.8s).
+      const landX  = sx + this.attackDir * 300;
+      const landY  = this.sprite.y;
+      const alpha  = 0.2 + progress * 0.45;
+      const rx     = 12 + progress * 10;
+      this.telegraphGfx.fillStyle(0x88ff00, alpha);
+      this.telegraphGfx.fillEllipse(landX, landY, rx * 2, rx * 0.45);
     } else {
       // Expanding purple ring around enemy
       const maxR   = 55;
@@ -364,6 +389,11 @@ export abstract class Enemy {
       const dashDir: 1 | -1 = heroX >= this.sprite.x ? 1 : -1;
       this.direction = dashDir;
       this.sprite.body!.setVelocityX(dashDir * 520);
+    } else if (this.stats.attackType === 'leap') {
+      const leapDir: 1 | -1 = heroX >= this.sprite.x ? 1 : -1;
+      this.direction = leapDir;
+      this.leapStartTime = this.scene.time.now;
+      this.sprite.body!.setVelocityX(leapDir * 520);
     } else if (this.stats.attackType === 'ranged') {
       const projDir: 1 | -1 = heroX >= this.sprite.x ? 1 : -1;
       this.direction = projDir;
@@ -444,7 +474,8 @@ export abstract class Enemy {
 
   /** Returns higher damage when mid-dash so the lunge hurts more than a brush. */
   get contactDamage(): number {
-    return this.attackState === 'attacking' && this.stats.attackType === 'dash'
+    return this.attackState === 'attacking' &&
+      (this.stats.attackType === 'dash' || this.stats.attackType === 'leap')
       ? this.stats.attackDamage
       : 1;
   }
@@ -516,10 +547,10 @@ export class MediumEnemy extends Enemy {
       spriteH:    58,
       bodyW:      26,
       bodyH:      50,
-      attackType:        'dash',
+      attackType:        'leap',
       detectionRange:    280,
       telegraphDuration: 680,
-      attackDuration:    380,
+      attackDuration:    480,
       attackCooldown:    2600,
       attackDamage:      2,
     });
