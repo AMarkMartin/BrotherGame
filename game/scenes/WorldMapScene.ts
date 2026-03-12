@@ -295,6 +295,8 @@ export class WorldMapScene extends Phaser.Scene {
   private _hazeGfx:     Phaser.GameObjects.Graphics | null = null;
   /** Full-screen lens vignette at scene level. */
   private _vignetteGfx: Phaser.GameObjects.Graphics | null = null;
+  /** Soft cast-shadow ellipse beneath the floating city, drawn on terrain. */
+  private _shadowGfx:   Phaser.GameObjects.Graphics | null = null;
   /** Permanent outline ring drawn at the edge of the reachable hex area. */
   private _reachOutlineGfx: Phaser.GameObjects.Graphics | null = null;
   /** Terrain fill graphics for each game tile — hidden when zoomed far out. */
@@ -352,6 +354,7 @@ export class WorldMapScene extends Phaser.Scene {
   private cityDot: Phaser.GameObjects.Graphics | null = null;
   /** Zoomed-in city sprite (cityzoom.webp), bobbing gently. Hidden when zoomed out. */
   private _citySprite:   Phaser.GameObjects.Image | null = null;
+  private _cityBobBaseX: number = 0;
   private _cityBobBaseY: number = 0;
   /** True while the city movement tween is playing — blocks new End Cycle clicks. */
   private _cityMoving    = false;
@@ -371,6 +374,8 @@ export class WorldMapScene extends Phaser.Scene {
   private dragStartY  = 0;
   private ctnrStartX  = 0;
   private ctnrStartY  = 0;
+  private _parallaxX  = 0;
+  private _parallaxY  = 0;
   private mapCtrY     = 0;
 
   private routeOverlay:   Phaser.GameObjects.Container | null = null;
@@ -549,8 +554,13 @@ export class WorldMapScene extends Phaser.Scene {
       const moved = Math.hypot(p.x - this.dragStartX, p.y - this.dragStartY);
       if (moved < 6 && !this.isDragging) return;
       this.isDragging = true;
-      this.mapContainer.x = this.ctnrStartX + (p.x - this.dragStartX);
-      this.mapContainer.y = this.ctnrStartY + (p.y - this.dragStartY);
+      const dx = p.x - this.dragStartX;
+      const dy = p.y - this.dragStartY;
+      this.mapContainer.x = this.ctnrStartX + dx;
+      this.mapContainer.y = this.ctnrStartY + dy;
+      // City sprite lags behind camera — floats free of the ground plane.
+      this._parallaxX = -0.04 * dx / this.currentZoom;
+      this._parallaxY = -0.04 * dy / this.currentZoom;
       this._updateScreenLabelTransforms();
       // Sync terrain sprites when the camera has panned by at least half a tile.
       const movePx = Math.hypot(
@@ -562,6 +572,7 @@ export class WorldMapScene extends Phaser.Scene {
     this.input.on('pointerup', () => {
       this.mapPointerDown = false;
       this.isDragging = false;
+      // Let city parallax ease back naturally — no snap needed.
     });
 
     if (this.gsm.missionResult) this._showMissionResult();
@@ -578,12 +589,25 @@ export class WorldMapScene extends Phaser.Scene {
     this._terrainGfx       = fillGfx;
     this._terrainDetailGfx = bevlGfx;
     this._terrainLineGfx   = lineGfx;
-    // Insertion order: fill → terrain-art-sprites → bevel → grid-lines
+    // Insertion order: fill → terrain-art-sprites → bevel → shadow → grid-lines
     // Fog is inserted on top by _buildFogOverlay; grid lines & bevel stay separate for alpha control.
     this._terrainSpriteContainer = this.add.container(0, 0);
     this.mapContainer.add(fillGfx);
     this.mapContainer.add(this._terrainSpriteContainer);
     this.mapContainer.add(bevlGfx);
+
+    // Ground shadow — soft dark oval cast by the floating city onto terrain below.
+    const shadowGfx = this.add.graphics();
+    this._shadowGfx = shadowGfx;
+    const { x: scx, y: scy } = tilePx(this.gsm.cityHex.q, this.gsm.cityHex.r);
+    const R = TILE_R, SY = TILE_SY;
+    shadowGfx.fillStyle(0x000000, 0.03); shadowGfx.fillEllipse(scx, scy, R * 12, R * 12 * SY);
+    shadowGfx.fillStyle(0x000000, 0.04); shadowGfx.fillEllipse(scx, scy, R *  9, R *  9 * SY);
+    shadowGfx.fillStyle(0x000000, 0.05); shadowGfx.fillEllipse(scx, scy, R *  6, R *  6 * SY);
+    shadowGfx.fillStyle(0x000000, 0.06); shadowGfx.fillEllipse(scx, scy, R *  4, R *  4 * SY);
+    shadowGfx.fillStyle(0x000000, 0.05); shadowGfx.fillEllipse(scx, scy, R *  2, R *  2 * SY);
+    this.mapContainer.add(shadowGfx);
+
     this.mapContainer.add(lineGfx);
 
     for (let q = -WORLD_RADIUS; q <= WORLD_RADIUS; q++) {
@@ -784,7 +808,8 @@ export class WorldMapScene extends Phaser.Scene {
       .setDepth(10);
     this.gameTileContainer.add(spr);
     this._citySprite   = spr;
-    this._cityBobBaseY = cy -3;
+    this._cityBobBaseX = cx;
+    this._cityBobBaseY = cy - 3;
     this._updateScreenLabelTransforms();
   }
 
@@ -850,9 +875,14 @@ export class WorldMapScene extends Phaser.Scene {
     for (const spr of this._terrainTileSprites) {
       spr.setAlpha(t);
     }
-    // Terrain fills fade in; ring stays at full alpha always.
+    // Terrain fills fade in; ring fades out as you zoom in.
     for (const gfx of this._gameTileGfxList) {
       gfx.setAlpha(t);
+    }
+    // Ring fades out after tiles are fully interactive — starts at LABEL_ZOOM, gone by zoom ~6.
+    if (this._reachOutlineGfx) {
+      const ringFade = Phaser.Math.Clamp((this.currentZoom - LABEL_ZOOM) / (LABEL_ZOOM * 0.75), 0, 1);
+      this._reachOutlineGfx.setAlpha(1 - ringFade);
     }
     // Clear corridor hover highlight once we're mostly zoomed in.
     if (show) this._onCorridorOut();
@@ -1068,8 +1098,12 @@ export class WorldMapScene extends Phaser.Scene {
     }
 
     // ── Gently bob the city sprite (suppressed during movement tween) ───────────────
+    // Ease city parallax back toward zero — gentle float-back when pan ends.
+    this._parallaxX *= 0.98;
+    this._parallaxY *= 0.98;
     if (this._citySprite && this._citySprite.alpha > 0 && !this._cityMoving) {
-      this._citySprite.y = this._cityBobBaseY + Math.sin(time * 0.0005) * TILE_R * 0.12;
+      this._citySprite.x = this._cityBobBaseX + this._parallaxX;
+      this._citySprite.y = this._cityBobBaseY + Math.sin(time * 0.0005) * TILE_R * 0.12 + this._parallaxY;
     }
 
     // ── Zoom-driven visual effect alphas ─────────────────────────────────────
@@ -1114,6 +1148,11 @@ export class WorldMapScene extends Phaser.Scene {
     // Aerial haze (pale blue tint) and vignette: deepen at close zoom
     if (this._hazeGfx)     this._hazeGfx.setAlpha(ss(zoomNear, 0.10, 0.55) * 0.10);
     if (this._vignetteGfx) this._vignetteGfx.setAlpha(ss(zoomNear, 0.04, 0.38) * 0.85);
+    // City sprite grows slightly at close zoom — reinforces that it's nearer to the camera.
+    if (this._citySprite) {
+      const baseSize = TILE_R * 1.2;
+      this._citySprite.setDisplaySize(baseSize * (1.0 + 0.4 * zoomNear), baseSize * (1.0 + 0.4 * zoomNear));
+    }
 
     gfx.clear();
 
@@ -1519,6 +1558,7 @@ export class WorldMapScene extends Phaser.Scene {
     if (this._citySprite) {
       this._citySprite.x = fromPx.x;
       this._citySprite.y = fromPx.y;
+      this._cityBobBaseX  = fromPx.x;
       this._cityBobBaseY  = fromPx.y;
     }
 
@@ -1595,6 +1635,7 @@ export class WorldMapScene extends Phaser.Scene {
         if (this._citySprite) {
           this._citySprite.x = pos.x;
           this._citySprite.y = pos.y;
+          this._cityBobBaseX  = pos.x;
           this._cityBobBaseY  = pos.y;
         }
         // Amber wake contrail — draw each segment from last sampled to current.
@@ -1617,7 +1658,7 @@ export class WorldMapScene extends Phaser.Scene {
           onUpdate: () => this._updateScreenLabelTransforms(),
           onComplete: () => {
             if (this.cityDot)     { this.cityDot.x = 0;           this.cityDot.y = 0; }
-            if (this._citySprite) { this._citySprite.x = toPx.x;  this._cityBobBaseY = toPx.y; }
+            if (this._citySprite) { this._citySprite.x = toPx.x; this._cityBobBaseX = toPx.x; this._cityBobBaseY = toPx.y; }
             this._reachOutlineGfx?.setAlpha(1);
             this._updateLabelVisibility();
             onComplete();
@@ -1944,10 +1985,10 @@ export class WorldMapScene extends Phaser.Scene {
       for (let r = -WORLD_RADIUS; r <= WORLD_RADIUS; r++) {
         if (Math.abs(-q - r) > WORLD_RADIUS) continue;
         const d = hexDistance({ q, r }, { q: cq, r: cr });
-        if (d <= 6) continue;                                    // full brightness near city
-    const alpha = Math.min(0.45, (d - 6) / 32 * 0.45);     // ramp to 45% black at dist 38+
+        if (d <= 10) continue;                                      // inner ring stays clear
+        const alpha = Math.min(0.22, (d - 10) / 28 * 0.22);       // ramp to 22% sky-blue at dist 38+
         const { x, y } = tilePx(q, r);
-        gfx.fillStyle(0x000000, alpha);
+        gfx.fillStyle(0x87b8d4, alpha);
         gfx.fillPoints(tilePts(x, y), true);
       }
     }
