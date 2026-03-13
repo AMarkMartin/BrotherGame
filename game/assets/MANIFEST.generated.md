@@ -13,6 +13,10 @@
 | `spiderwalkcycle` | Generated from video (walk) | `animations/spiderwalkcycle.webp` | 6×6 cells, 90×51 display | webp spritesheet | generated |
 | `terrain_alpine_01` | alpine terrain tile v01 | `terrain_tiles/terrain_alpine_01.webp` | 384×384 | webp | generated |
 | `terrain_alpine_02` | alpine terrain tile v02 | `terrain_tiles/terrain_alpine_02.webp` | 384×384 | webp | generated |
+| `terrain_alpine_03` | alpine terrain tile v03 | `terrain_tiles/terrain_alpine_03.webp` | 384×384 | webp | generated |
+| `terrain_alpine_04` | alpine terrain tile v04 | `terrain_tiles/terrain_alpine_04.webp` | 384×384 | webp | generated |
+| `terrain_alpine_05` | alpine terrain tile v05 | `terrain_tiles/terrain_alpine_05.webp` | 384×384 | webp | generated |
+| `terrain_alpine_06` | alpine terrain tile v06 | `terrain_tiles/terrain_alpine_06.webp` | 384×384 | webp | generated |
 | `terrain_bare_rock_01` | bare rock terrain tile v01 | `terrain_tiles/terrain_bare_rock_01.webp` | 384×384 | webp | generated |
 | `terrain_desert_dunes_01` | desert dunes terrain tile v01 | `terrain_tiles/terrain_desert_dunes_01.webp` | 384×384 | webp | generated |
 | `terrain_mangrove_01` | mangrove terrain tile v01 | `terrain_tiles/terrain_mangrove_01.webp` | 384×384 | webp | generated |

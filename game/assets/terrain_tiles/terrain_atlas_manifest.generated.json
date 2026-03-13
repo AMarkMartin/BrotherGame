@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-03-12T14:05:35.659Z",
+  "generatedAt": "2026-03-13T03:41:01.048Z",
   "atlases": [
     {
       "group": "hex_tileset",
       "imageRelativePath": "game/assets/terrain_tiles/atlases/hex_tileset.webp",
       "dataRelativePath": "game/assets/terrain_tiles/atlases/hex_tileset.atlas.json",
-      "tileCount": 20,
+      "tileCount": 24,
       "columns": 5,
-      "rows": 4,
+      "rows": 5,
       "cellSize": {
         "width": 384,
         "height": 384
@@ -48,6 +48,58 @@
             "radius": 0.3333333333333333,
             "squashY": 0.55,
             "topOverflow": 0.09114583333333333
+          }
+        },
+        {
+          "id": "terrain_alpine_03",
+          "terrainType": "alpine",
+          "variant": 3,
+          "frameKey": "terrain_alpine_03",
+          "coreHex": {
+            "centerX": 0.5,
+            "centerY": 0.55,
+            "radius": 0.3333333333333333,
+            "squashY": 0.55,
+            "topOverflow": 0.057291666666666664
+          }
+        },
+        {
+          "id": "terrain_alpine_04",
+          "terrainType": "alpine",
+          "variant": 4,
+          "frameKey": "terrain_alpine_04",
+          "coreHex": {
+            "centerX": 0.5,
+            "centerY": 0.55,
+            "radius": 0.3333333333333333,
+            "squashY": 0.55,
+            "topOverflow": 0.0078125
+          }
+        },
+        {
+          "id": "terrain_alpine_05",
+          "terrainType": "alpine",
+          "variant": 5,
+          "frameKey": "terrain_alpine_05",
+          "coreHex": {
+            "centerX": 0.5,
+            "centerY": 0.55,
+            "radius": 0.3333333333333333,
+            "squashY": 0.55,
+            "topOverflow": 0.078125
+          }
+        },
+        {
+          "id": "terrain_alpine_06",
+          "terrainType": "alpine",
+          "variant": 6,
+          "frameKey": "terrain_alpine_06",
+          "coreHex": {
+            "centerX": 0.5,
+            "centerY": 0.55,
+            "radius": 0.3333333333333333,
+            "squashY": 0.55,
+            "topOverflow": 0.044270833333333336
           }
         },
         {

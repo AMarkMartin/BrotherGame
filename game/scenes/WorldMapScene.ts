@@ -302,6 +302,10 @@ export class WorldMapScene extends Phaser.Scene {
   private _windStreaks: Array<{ x: number; y: number; len: number; alpha: number; speed: number }> = [];
   /** Soft cast-shadow ellipse beneath the floating city, drawn on terrain. */
   private _shadowGfx:   Phaser.GameObjects.Graphics | null = null;
+  /** Floating info card shown when a corridor is clicked. */
+  private _corridorInfoCard:  Phaser.GameObjects.Container | null = null;
+  /** ID of the corridor the pointer was over at pointerdown (to detect clean clicks). */
+  private _clickedCorridorId: string | null = null;
   /** Permanent outline ring drawn at the edge of the reachable hex area. */
   private _reachOutlineGfx: Phaser.GameObjects.Graphics | null = null;
   /** Terrain fill graphics for each game tile — hidden when zoomed far out. */
@@ -584,6 +588,7 @@ export class WorldMapScene extends Phaser.Scene {
       this.dragStartY = p.y;
       this.ctnrStartX = this.mapContainer.x;
       this.ctnrStartY = this.mapContainer.y;
+      this._clickedCorridorId = this._hoveredCorridorId;
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (!this.mapPointerDown) return;
@@ -605,10 +610,22 @@ export class WorldMapScene extends Phaser.Scene {
       );
       if (movePx > TILE_R * this.currentZoom * 0.5) this._syncWorldTerrainSprites();
     });
-    this.input.on('pointerup', () => {
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
       this.mapPointerDown = false;
+      const wasDragging = this.isDragging;
       this.isDragging = false;
       // Let city parallax ease back naturally — no snap needed.
+      if (!wasDragging) {
+        if (this._clickedCorridorId && this.currentZoom < LABEL_ZOOM) {
+          // Clean click on a corridor — open info card.
+          const corr = this.gsm.windNetwork.corridors.find(c => c.id === this._clickedCorridorId);
+          if (corr) this._openCorridorInfoCard(corr, p.x, p.y);
+        } else if (this._corridorInfoCard) {
+          // Clicked empty space — dismiss open card.
+          this._dismissCorridorInfoCard();
+        }
+      }
+      this._clickedCorridorId = null;
     });
 
     if (this.gsm.missionResult) this._showMissionResult();
@@ -1001,6 +1018,11 @@ export class WorldMapScene extends Phaser.Scene {
 
   /** Draw translucent band hexes over a corridor when the player hovers it. */
   private _onCorridorHover(corr: WindCorridor): void {
+    // Dismiss card if hovering a different corridor than the one shown.
+    if (this._corridorInfoCard && this._hoveredCorridorId !== corr.id) {
+      this._dismissCorridorInfoCard();
+    }
+    this._hoveredCorridorId = corr.id;
     if (!this._hoverGfx) {
       this._hoverGfx = this.add.graphics();
       this.mapContainer.add(this._hoverGfx);
@@ -1038,8 +1060,156 @@ export class WorldMapScene extends Phaser.Scene {
 
   /** Clear hover highlight and name label when pointer leaves a corridor. */
   private _onCorridorOut(): void {
+    this._hoveredCorridorId = null;
     this._hoverGfx?.clear();
     this._corridorNameLabel?.setVisible(false);
+  }
+
+  // ── Corridor Info Card ───────────────────────────────────────────────────
+
+  /** Deterministic hash of a corridor id → non-negative integer. */
+  private _corridorHash(id: string): number {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
+
+  /**
+   * Open a themed info card near the given screen position showing
+   * corridor name, derived altitude, wind speed, route length, and lore.
+   */
+  private _openCorridorInfoCard(corr: WindCorridor, screenX: number, screenY: number): void {
+    this._dismissCorridorInfoCard();
+
+    const hash   = this._corridorHash(corr.id);
+    const alt    = 3800 + (hash % 28) * 200;
+    const windKt = corr.speed === 1 ? 8  + (hash >> 3) % 12
+                 : corr.speed === 2 ? 22 + (hash >> 5) % 24
+                                    : 50 + (hash >> 7) % 40;
+    const LORE = [
+      'First charted by Skalder navigators during the Drift Epoch.',
+      'Known to carry trace minerals from volcanic ridges far below.',
+      'Skyborn merchants use this current for the eastern grain runs.',
+      'Unusual layering makes this corridor treacherous in cold season.',
+      'Calm enough that birds have been sighted riding it for days.',
+      'This current has shifted north three times since the Founding.',
+      'Guild markers here date back to the Second Migration.',
+      'Reliable by pilot reckoning — deceptively slow by cartographic measure.',
+      'Sudden gusts at junction points test even seasoned crews.',
+      'Carries the faint smell of salt despite distance from any ocean biome.',
+      'Traditionally used as a boundary marker between highland territories.',
+      'Some navigators report compass drift near its edges — cause unknown.',
+    ];
+    const lore = LORE[(hash >> 2) % LORE.length];
+
+    const CARD_W  = 420;
+    const CARD_H  = 310;
+    const RADIUS  = 12;
+    const PAD     = 18;
+    const W       = this.scale.width;
+    const H       = this.scale.height;
+
+    // Clamp card position so it stays inside viewport with 16px margin.
+    const cx = Phaser.Math.Clamp(screenX + 20, 16, W - CARD_W - 16);
+    const cy = Phaser.Math.Clamp(screenY - 20, 16, H - CARD_H - 16);
+
+    const ct = this.add.container(cx, cy).setDepth(75);
+
+    // ── Background ────────────────────────────────────────────────────────
+    const bg = this.add.graphics();
+    // Outer glow
+    bg.lineStyle(8, corr.color, 0.12);
+    bg.strokeRoundedRect(0, 0, CARD_W, CARD_H, RADIUS);
+    // Fill
+    bg.fillStyle(0x050e1e, 0.95);
+    bg.fillRoundedRect(0, 0, CARD_W, CARD_H, RADIUS);
+    // Border
+    bg.lineStyle(1.5, corr.color, 0.50);
+    bg.strokeRoundedRect(0, 0, CARD_W, CARD_H, RADIUS);
+    ct.add(bg);
+
+    // ── Top color strip ───────────────────────────────────────────────────
+    const strip = this.add.graphics();
+    strip.fillStyle(corr.color, 0.22);
+    strip.fillRoundedRect(0, 0, CARD_W, 46, { tl: RADIUS, tr: RADIUS, bl: 0, br: 0 });
+    ct.add(strip);
+
+    // ── Left accent bar ───────────────────────────────────────────────────
+    const accent = this.add.graphics();
+    accent.fillStyle(corr.color, 0.80);
+    accent.fillRect(0, RADIUS, 4, CARD_H - RADIUS * 2);
+    ct.add(accent);
+
+    // ── Name ─────────────────────────────────────────────────────────────
+    const colorHex = '#' + corr.color.toString(16).padStart(6, '0');
+    const nameText = this.add.text(PAD + 4, 12, corr.name.toUpperCase(), {
+      fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold', color: colorHex,
+    });
+    ct.add(nameText);
+
+    // ── Close button ──────────────────────────────────────────────────────
+    const closeBtn = this.add.text(CARD_W - PAD, 12, '×', {
+      fontSize: '22px', fontFamily: 'monospace', color: '#6090a0',
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerover',  () => closeBtn.setColor('#a0d0e0'));
+    closeBtn.on('pointerout',   () => closeBtn.setColor('#6090a0'));
+    closeBtn.on('pointerdown',  () => this._dismissCorridorInfoCard());
+    ct.add(closeBtn);
+
+    // ── Divider 1 ─────────────────────────────────────────────────────────
+    const div1 = this.add.graphics();
+    div1.lineStyle(1, corr.color, 0.20);
+    div1.lineBetween(PAD, 52, CARD_W - PAD, 52);
+    ct.add(div1);
+
+    // ── Stats ─────────────────────────────────────────────────────────────
+    const flowLabel = corr.speed === 1 ? 'Light Breeze' : corr.speed === 2 ? 'Steady Wind' : 'Gale Current';
+    const pips = '◆'.repeat(corr.speed) + '◇'.repeat(3 - corr.speed);
+    const stats: Array<[string, string]> = [
+      ['ALTITUDE',     alt.toLocaleString() + ' m'],
+      ['WIND SPEED',   windKt + ' kt'],
+      ['ROUTE LENGTH', corr.spine.length + ' segments'],
+      ['FLOW',         flowLabel + '  ' + pips],
+    ];
+    let sy = 64;
+    for (const [label, value] of stats) {
+      ct.add(this.add.text(PAD + 6, sy, '◈  ' + label, {
+        fontSize: '14px', fontFamily: 'monospace', color: '#4a8aaa',
+      }));
+      ct.add(this.add.text(CARD_W - PAD, sy, value, {
+        fontSize: '15px', fontFamily: 'monospace', color: '#c8dce8',
+      }).setOrigin(1, 0));
+      sy += 28;
+    }
+
+    // ── Divider 2 ─────────────────────────────────────────────────────────
+    const div2 = this.add.graphics();
+    div2.lineStyle(1, corr.color, 0.20);
+    div2.lineBetween(PAD, sy + 2, CARD_W - PAD, sy + 2);
+    ct.add(div2);
+
+    // ── Lore ──────────────────────────────────────────────────────────────
+    ct.add(this.add.text(PAD + 4, sy + 12, '"' + lore + '"', {
+      fontSize: '13px', fontFamily: 'monospace', fontStyle: 'italic',
+      color: '#5a7a8a', wordWrap: { width: CARD_W - PAD * 2 - 8 },
+    }));
+
+    // ── Fade in ───────────────────────────────────────────────────────────
+    ct.setAlpha(0);
+    this.tweens.add({ targets: ct, alpha: 1, duration: 150, ease: 'Linear' });
+
+    this._corridorInfoCard = ct;
+  }
+
+  /** Fade out and destroy the corridor info card. */
+  private _dismissCorridorInfoCard(): void {
+    if (!this._corridorInfoCard) return;
+    const card = this._corridorInfoCard;
+    this._corridorInfoCard = null;
+    this.tweens.add({
+      targets: card, alpha: 0, duration: 100, ease: 'Linear',
+      onComplete: () => card.destroy(),
+    });
   }
 
   /**
