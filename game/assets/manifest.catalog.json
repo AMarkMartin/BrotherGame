@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-03-13T03:41:01.046Z",
+  "generatedAt": "2026-03-14T15:28:27.574Z",
   "assets": [
     {
       "id": "city_close_view_basic",
@@ -69,6 +69,114 @@
         "sizeBytes": 304877
       },
       "generatedAt": "2026-03-09T05:38:46.873Z",
+      "notes": ""
+    },
+    {
+      "id": "forest_l1",
+      "name": "Forest L1",
+      "status": "active",
+      "category": "backgrounds",
+      "mode": "image",
+      "outputFormat": "webp",
+      "maintainAspectRatio": true,
+      "resizeFit": "contain",
+      "outputRelativePath": "game/assets/backgrounds/forest_l1.webp",
+      "outputAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\backgrounds\\forest_l1.webp",
+      "metadataAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\_meta\\forest_l1.asset.json",
+      "metadataRelativePath": "game/assets/_meta/forest_l1.asset.json",
+      "exportSize": {
+        "width": 3845,
+        "height": 1536
+      },
+      "displaySize": {
+        "width": 3845,
+        "height": 1536
+      },
+      "optimization": {
+        "enabled": true,
+        "backgroundRemovalRequested": false,
+        "cropToBoundingBoxRequested": false,
+        "notes": []
+      },
+      "source": {
+        "kind": "image",
+        "name": "Forest L1.png",
+        "mimeType": "image/png",
+        "sizeBytes": 7492939
+      },
+      "generatedAt": "2026-03-14T15:27:53.589Z",
+      "notes": ""
+    },
+    {
+      "id": "forest_l2",
+      "name": "Forest L2",
+      "status": "active",
+      "category": "backgrounds",
+      "mode": "image",
+      "outputFormat": "webp",
+      "maintainAspectRatio": true,
+      "resizeFit": "contain",
+      "outputRelativePath": "game/assets/backgrounds/forest_l2.webp",
+      "outputAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\backgrounds\\forest_l2.webp",
+      "metadataAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\_meta\\forest_l2.asset.json",
+      "metadataRelativePath": "game/assets/_meta/forest_l2.asset.json",
+      "exportSize": {
+        "width": 3845,
+        "height": 1536
+      },
+      "displaySize": {
+        "width": 3845,
+        "height": 1536
+      },
+      "optimization": {
+        "enabled": true,
+        "backgroundRemovalRequested": false,
+        "cropToBoundingBoxRequested": false,
+        "notes": []
+      },
+      "source": {
+        "kind": "image",
+        "name": "Forest L2.png",
+        "mimeType": "image/png",
+        "sizeBytes": 925017
+      },
+      "generatedAt": "2026-03-14T15:28:10.378Z",
+      "notes": ""
+    },
+    {
+      "id": "forest_l3",
+      "name": "Forest L3",
+      "status": "active",
+      "category": "backgrounds",
+      "mode": "image",
+      "outputFormat": "webp",
+      "maintainAspectRatio": true,
+      "resizeFit": "contain",
+      "outputRelativePath": "game/assets/backgrounds/forest_l3.webp",
+      "outputAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\backgrounds\\forest_l3.webp",
+      "metadataAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\_meta\\forest_l3.asset.json",
+      "metadataRelativePath": "game/assets/_meta/forest_l3.asset.json",
+      "exportSize": {
+        "width": 3845,
+        "height": 1536
+      },
+      "displaySize": {
+        "width": 3845,
+        "height": 1536
+      },
+      "optimization": {
+        "enabled": true,
+        "backgroundRemovalRequested": false,
+        "cropToBoundingBoxRequested": false,
+        "notes": []
+      },
+      "source": {
+        "kind": "image",
+        "name": "Forest L3.png",
+        "mimeType": "image/png",
+        "sizeBytes": 5579315
+      },
+      "generatedAt": "2026-03-14T15:28:27.570Z",
       "notes": ""
     },
     {
@@ -247,6 +355,78 @@
         "sizeBytes": 177164
       },
       "generatedAt": "2026-03-08T01:48:36.787Z",
+      "notes": ""
+    },
+    {
+      "id": "kael_the_iron_skirmisher",
+      "name": "Kael   The Iron Skirmisher",
+      "status": "active",
+      "category": "ui",
+      "mode": "image",
+      "outputFormat": "webp",
+      "maintainAspectRatio": true,
+      "resizeFit": "contain",
+      "outputRelativePath": "game/assets/ui/kael_the_iron_skirmisher.webp",
+      "outputAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\ui\\kael_the_iron_skirmisher.webp",
+      "metadataAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\_meta\\kael_the_iron_skirmisher.asset.json",
+      "metadataRelativePath": "game/assets/_meta/kael_the_iron_skirmisher.asset.json",
+      "exportSize": {
+        "width": 778,
+        "height": 1050
+      },
+      "displaySize": {
+        "width": 370,
+        "height": 499
+      },
+      "optimization": {
+        "enabled": true,
+        "backgroundRemovalRequested": false,
+        "cropToBoundingBoxRequested": false,
+        "notes": []
+      },
+      "source": {
+        "kind": "image",
+        "name": "Kael - The Iron Skirmisher.webp",
+        "mimeType": "image/webp",
+        "sizeBytes": 137040
+      },
+      "generatedAt": "2026-03-14T04:43:24.042Z",
+      "notes": ""
+    },
+    {
+      "id": "lyra_the_vellum_scout",
+      "name": "Lyra The Vellum Scout",
+      "status": "active",
+      "category": "ui",
+      "mode": "image",
+      "outputFormat": "webp",
+      "maintainAspectRatio": true,
+      "resizeFit": "contain",
+      "outputRelativePath": "game/assets/ui/lyra_the_vellum_scout.webp",
+      "outputAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\ui\\lyra_the_vellum_scout.webp",
+      "metadataAbsolutePath": "C:\\Users\\oacom\\Documents\\AI_Code\\BrotherGame\\game\\assets\\_meta\\lyra_the_vellum_scout.asset.json",
+      "metadataRelativePath": "game/assets/_meta/lyra_the_vellum_scout.asset.json",
+      "exportSize": {
+        "width": 760,
+        "height": 1049
+      },
+      "displaySize": {
+        "width": 370,
+        "height": 511
+      },
+      "optimization": {
+        "enabled": true,
+        "backgroundRemovalRequested": false,
+        "cropToBoundingBoxRequested": false,
+        "notes": []
+      },
+      "source": {
+        "kind": "image",
+        "name": "Lyra - The Vellum Scout.webp",
+        "mimeType": "image/webp",
+        "sizeBytes": 121588
+      },
+      "generatedAt": "2026-03-14T04:44:28.893Z",
       "notes": ""
     },
     {
