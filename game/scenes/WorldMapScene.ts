@@ -107,7 +107,6 @@ interface TerrainAtlasManifestEntry {
 }
 
 interface TerrainAtlasManifest {
-  generatedAt: string;
   atlases: TerrainAtlasManifestEntry[];
 }
 
